@@ -1,0 +1,97 @@
+{
+  "name": "rockzy-link",
+  "version": "0.1.1",
+  "description": "Production-ready React Link component with smart prefetching, route caching, scroll restoration, a11y, offline hooks, and navigation snapshots.",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "docs",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./runtime": {
+      "types": "./dist/runtime/link-runtime.d.ts",
+      "import": "./dist/runtime/link-runtime.js"
+    },
+    "./cache": {
+      "types": "./dist/cache/route-cache.d.ts",
+      "import": "./dist/cache/route-cache.js"
+    },
+    "./cache/browser": {
+      "types": "./dist/cache/browser-cache.d.ts",
+      "import": "./dist/cache/browser-cache.js"
+    },
+    "./cache/node": {
+      "types": "./dist/cache/node-cache.d.ts",
+      "import": "./dist/cache/node-cache.js"
+    },
+    "./prefetch": {
+      "types": "./dist/prefetch/scheduler.d.ts",
+      "import": "./dist/prefetch/scheduler.js"
+    },
+    "./security": {
+      "types": "./dist/security/url.d.ts",
+      "import": "./dist/security/url.js"
+    },
+    "./navigation/scroll": {
+      "types": "./dist/navigation/scroll-restoration.d.ts",
+      "import": "./dist/navigation/scroll-restoration.js"
+    },
+    "./navigation/view-transitions": {
+      "types": "./dist/navigation/view-transitions.d.ts",
+      "import": "./dist/navigation/view-transitions.js"
+    },
+    "./service-worker": {
+      "types": "./dist/offline/service-worker-script.d.ts",
+      "import": "./dist/offline/service-worker-script.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@cacheable/node-cache": "^1.7.0"
+  },
+  "peerDependencies": {
+    "react": ">=18.2.0 || >=19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.0",
+    "@types/react": "^19.1.6",
+    "@vitejs/plugin-react": "^5.0.0",
+    "jsdom": "^26.1.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  },
+  "keywords": [
+    "react",
+    "link",
+    "prefetch",
+    "navigation",
+    "routing",
+    "cache",
+    "offline"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fullra/production-link.git"
+  }
+}
