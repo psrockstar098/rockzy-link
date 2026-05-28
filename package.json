@@ -1,6 +1,6 @@
 {
   "name": "rockzy-link",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Production-ready React Link component with smart prefetching, route caching, scroll restoration, a11y, offline hooks, and navigation snapshots.",
   "type": "module",
   "sideEffects": false,
