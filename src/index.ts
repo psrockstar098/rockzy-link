@@ -24,7 +24,10 @@ export {
 } from "./runtime/link-runtime.js";
 export type {
   LinkRuntimeOptions,
+  NavigationGuard,
+  NavigationGuardContext,
   NavigationOptions,
+  RoutePrefetchRule,
   RuntimePrefetchOptions
 } from "./runtime/link-runtime.js";
 export {
@@ -50,9 +53,15 @@ export {
   SmartPrefetchScheduler
 } from "./prefetch/scheduler.js";
 export type {
+  AdaptivePrefetchOptions,
+  PrefetchAsset,
+  PrefetchAssetInput,
+  PrefetchDiagnostics,
+  PrefetchDiagnosticReason,
   PrefetchFetcher,
   PrefetchSchedulerOptions,
-  PrefetchTaskOptions
+  PrefetchTaskOptions,
+  SpeculationRulesOptions
 } from "./prefetch/scheduler.js";
 export {
   ScrollRestorationManager
@@ -68,6 +77,13 @@ export {
 } from "./a11y/accessibility-manager.js";
 export {
   OfflineNavigationManager
+} from "./offline/offline-navigation.js";
+export type {
+  OfflineNavigationManagerOptions,
+  OfflineQueueAddedDetail,
+  OfflineSyncedDetail,
+  OfflineSyncingDetail,
+  QueuedNavigation
 } from "./offline/offline-navigation.js";
 export {
   NavigationSnapshotCache

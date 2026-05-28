@@ -21,7 +21,17 @@ describe("RouteCache", () => {
     expect(revalidate).toHaveBeenCalledTimes(1);
 
     now = 101;
+    expect(cache.has("/profile", "route-data")).toBe(false);
     expect(cache.get("/profile", "route-data")).toBeUndefined();
+  });
+
+  it("checks cache presence without counting a read hit", () => {
+    const cache = new RouteCache();
+    const entry = cache.set("/dashboard", "html", "<main />");
+
+    expect(cache.has("/dashboard", "html")).toBe(true);
+    expect(entry.hits).toBe(0);
+    expect(cache.get("/dashboard", "html")?.entry.hits).toBe(1);
   });
 
   it("invalidates tags and mutation-related layers", () => {

@@ -3,6 +3,13 @@ export interface NetworkBudgetOptions {
     bytesPerMinute?: number | undefined;
     memoryBudgetBytes?: number | undefined;
 }
+export interface DevicePrefetchPolicy {
+    adaptive?: boolean | undefined;
+    batteryLevel?: number | undefined;
+    batteryCharging?: boolean | undefined;
+    lowBatteryThreshold?: number | undefined;
+    minDeviceMemoryGb?: number | undefined;
+}
 export declare class NetworkBudget {
     private availableBytes;
     private windowStartedAt;
@@ -14,5 +21,5 @@ export declare class NetworkBudget {
     spend(bytes: number, priority: PrefetchPriority): void;
     private refill;
 }
-export declare function canPrefetchOnCurrentDevice(priority: PrefetchPriority): boolean;
+export declare function canPrefetchOnCurrentDevice(priority: PrefetchPriority, policy?: DevicePrefetchPolicy): boolean;
 //# sourceMappingURL=network-budget.d.ts.map

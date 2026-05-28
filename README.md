@@ -1,58 +1,61 @@
 # rockzy-link
 
-A production-ready navigation runtime with a React `<Link>` component.
+A small React `<Link>` and navigation runtime for apps that want safer links, smarter prefetching, route caching, scroll restoration, accessibility, offline recovery, and browser-tested performance.
 
-Use the React component in React-based apps, or import the framework-neutral runtime from `rockzy-link/runtime` in Vue, Nuxt, SvelteKit, Angular, Solid, Qwik, Astro, or vanilla JavaScript.
+[![Test](https://github.com/psrockstar098/rockzy-link/actions/workflows/test.yml/badge.svg)](https://github.com/psrockstar098/rockzy-link/actions/workflows/test.yml)
+[![Size](https://github.com/psrockstar098/rockzy-link/actions/workflows/size.yml/badge.svg)](https://github.com/psrockstar098/rockzy-link/actions/workflows/size.yml)
+[![Benchmark](https://github.com/psrockstar098/rockzy-link/actions/workflows/benchmark.yml/badge.svg)](https://github.com/psrockstar098/rockzy-link/actions/workflows/benchmark.yml)
+[![Security](https://github.com/psrockstar098/rockzy-link/actions/workflows/security.yml/badge.svg)](https://github.com/psrockstar098/rockzy-link/actions/workflows/security.yml)
 
----
+## Why Use It?
 
-## Key Features
+Normal links navigate. `rockzy-link` coordinates the parts around navigation:
 
-- **URL Object Support & SSR-Safe Sanitization**: Environment-agnostic classifier filters unsafe protocols (e.g., `javascript:`, `vbscript:`, `data:`).
-- **Smart Prefetch Scheduling**: Automatically tracks and queues viewport visibility, mouse hover, and browser idle events.
-- **Network & Device Budgeting**: Budgets prefetching by concurrency, bandwidth usage per minute, device memory availability, and user `Save-Data` preference.
-- **Cross-Tab Request Deduplication**: Synchronizes prefetches across tabs via `BroadcastChannel` with storage fallbacks to prevent redundant network requests.
-- **Multi-Layer Route Cache**: Caches route data, RSC payloads, loaders, API responses, HTML, chunks, images, and fonts with TTL, stale-while-revalidate, tag-based, and mutation-based invalidation.
-- **Unified Scroll Restoration**: Manages window scroll, hash offsets via CSS, and nested scroll containers (e.g., sidebars, tables).
-- **Native View Transitions**: Automatically wraps transitions using `document.startViewTransition()` while respecting user reduced-motion preferences.
-- **Accessibility & Focus Restoration**: Hidden route announcement region, skips navigation triggers, and focuses on semantic elements post-navigation.
-- **Offline Navigation**: Queues failed navigations during offline status, registers service workers, and replays navigations in strict chronological order when online.
-- **Instant Snapshots**: Cache DOM states for ultra-fast back/forward navigation.
+- blocks unsafe URLs like `javascript:`
+- prefetches likely routes without flooding the network
+- dedupes prefetches across links and tabs
+- caches route/data responses with TTL, tags, and mutation invalidation
+- restores scroll and hash positions
+- supports View Transitions without ignoring reduced-motion users
+- announces route changes and restores focus
+- queues optimistic offline navigations
+- works with React, Next.js, React Router, TanStack Router, Remix, Vue, Nuxt, SvelteKit, Angular, Solid, Qwik, Astro, htmx, and vanilla JS
 
----
+It is best described as a **navigation acceleration layer**, not a router replacement. Your router still owns route matching and rendering.
 
 ## Install
-
-```bash
-npm install rockzy-link react @cacheable/node-cache
-```
-
-For non-React usage, React is optional:
 
 ```bash
 npm install rockzy-link
 ```
 
----
+React is a peer dependency. If your app already uses React, you are set.
 
-## Quick Start (React)
+## Quick Start
 
 ```tsx
-import { Link, LinkRuntimeProvider, createLinkRuntime } from "rockzy-link";
+import {
+  Link,
+  LinkRuntimeProvider,
+  createLinkRuntime
+} from "rockzy-link";
 
-// Create a singleton runtime
 const runtime = createLinkRuntime({
   prefetch: {
     concurrency: 4,
-    bandwidthBudgetBytesPerMinute: 3_000_000,
-    memoryBudgetBytes: 30_000_000
+    bandwidthBudgetBytesPerMinute: 2_500_000,
+    crossTabDedupe: true
+  },
+  a11y: {
+    announce: true,
+    restoreFocus: true
   }
 });
 
 export function App() {
   return (
     <LinkRuntimeProvider runtime={runtime}>
-      <Link href="/dashboard" prefetch="viewport" viewTransition>
+      <Link href="/dashboard" prefetch="viewport">
         Dashboard
       </Link>
     </LinkRuntimeProvider>
@@ -60,323 +63,105 @@ export function App() {
 }
 ```
 
----
+Use `href` for Next-style links and `to` for React Router-style links:
 
-## Package Overview
-
-Most web applications start with basic anchor tags or simple router links, but production-grade user experiences require navigation to coordinate as a system. This package centralizes navigation concerns so links, dashboards, sidebars, and framework adapters behave consistently.
-
-### Core Distinction
-
-- **React Apps**: Use the high-level `<Link>` component directly from `rockzy-link`.
-- **Non-React Frameworks**: Instantiate and connect the core runtime via `rockzy-link/runtime`.
-
-### Architecture Flow
-
-```mermaid
-flowchart TD
-  A["User intent: hover, focus, viewport, idle, click"] --> B["URL classifier"]
-  B --> C{"Safe internal route?"}
-  C -->|No| D["Let browser handle or sanitize unsafe href"]
-  C -->|Yes| E["Smart prefetch scheduler"]
-  E --> F["Network and device budget"]
-  E --> G["Cross-tab dedupe"]
-  E --> H["Route cache and browser cache"]
-  A --> I["Navigation runtime"]
-  I --> J["Router adapter or History API"]
-  I --> K["Scroll restoration"]
-  I --> L["View Transition API"]
-  I --> M["A11y announce and focus"]
-  I --> N["Offline queue and retry"]
-  I --> O["Back/forward snapshots"]
+```tsx
+<Link href="/docs">Docs</Link>
+<Link to="/settings">Settings</Link>
 ```
 
-### Import Map
+## The Mental Model
 
-| Import | Use Case |
-| --- | --- |
-| `rockzy-link` | React component plus all public utilities |
-| `rockzy-link/runtime` | Framework-neutral runtime engine |
-| `rockzy-link/cache` | In-memory client-side route cache |
-| `rockzy-link/cache/browser` | Browser Cache Storage helpers |
-| `rockzy-link/cache/node` | `@cacheable/node-cache` server-side cache adapter |
-| `rockzy-link/prefetch` | Smart prefetch scheduler and priority queue |
-| `rockzy-link/security` | URL classification and sanitization |
-| `rockzy-link/navigation/scroll` | Scroll restoration and container manager |
-| `rockzy-link/navigation/view-transitions` | View Transition helper functions |
-| `rockzy-link/service-worker` | Offline service worker script string |
+There are two paths:
 
-### Mental Model
+1. **Prefetch path**: hover, focus, viewport, idle, or pointerdown tells the scheduler a route may be needed soon.
+2. **Navigation path**: click runs safety checks, guards, router delegation, scroll/focus work, transitions, and offline recovery.
 
-Use `rockzy-link` as a **traffic controller**. Your framework still owns rendering and route matching. This package decides when it is safe and worthwhile to warm routes, navigate, restore scroll position, announce updates, animate page changes, retry requests, or evict cache entries.
+For the fastest simple router path, pass the work you do not need:
 
----
+```ts
+await runtime.navigate("/dashboard", {
+  router,
+  scroll: false,
+  announce: false,
+  focus: false
+});
+```
 
-## Developer Guide & Core Concepts
+That path avoids snapshot, scroll, accessibility, and transition overhead.
 
-### 1. Prefetch Modes
-
-Customize prefetch triggers on a link-by-link basis:
+## Prefetch Modes
 
 ```tsx
 <Link href="/pricing" prefetch="hover">Pricing</Link>
 <Link href="/dashboard" prefetch="viewport">Dashboard</Link>
 <Link href="/legal" prefetch="idle">Legal</Link>
-<Link href="/billing" prefetch="none">Billing</Link>
+<Link href="/checkout" prefetch="none">Checkout</Link>
 ```
 
-- **`hover`**: High priority. Schedules a prefetch when user pointer intent is clear (includes a movement delay to ignore quick hover fly-bys).
-- **`viewport`**: Medium priority. Schedules prefetching when the link enters the viewport, ordered by visibility.
-- **`idle`**: Low priority. Triggers speculative prefetching when the browser is idle.
-- **`none`**: Disables preprefetching entirely. Highly recommended for expensive, private, or mutation-sensitive endpoints.
+| Mode | Meaning | Best For |
+| --- | --- | --- |
+| `hover` | High-confidence user intent | Menus, sidebars, expensive pages |
+| `viewport` | Link entered the viewport | Primary content links |
+| `idle` | Browser has idle time | Cheap background warming |
+| `none` or `false` | Disable prefetch | Private, mutation-sensitive, or heavy routes |
+| `true` or `null` | Use default hover behavior | Next-style boolean compatibility |
 
-### 2. Route Cache
+`<Link>` also starts a high-priority prefetch on `pointerdown`, using the short time between press and click.
 
-Use the client-side route cache to reuse data across views. Cache kinds include: `route-data`, `rsc`, `loader`, `api`, `html`, `script`, `image`, and `font`.
+## Router Adapters
+
+A router adapter only needs `push`; `prefetch` is optional.
 
 ```ts
-runtime.routeCache.set("/api/user/42", "api", user, {
-  ttlMs: 60_000,
-  staleWhileRevalidateMs: 15_000,
-  tags: ["user:42"]
-});
-
-const cached = runtime.routeCache.get("/api/user/42", "api");
-```
-
-Invalidate cache entries following mutations:
-
-```ts
-runtime.routeCache.invalidateMutation("/settings", ["settings", "user:42"]);
-```
-
-> [!NOTE]
-> Client cache is for client-side reuse. Keep server cache invalidation in your framework, and use this cache for client-side warm data and navigation metadata.
-
-### 3. Scroll Restoration
-
-Window scroll restoration is automatic. For custom scroll areas (e.g. dashboards, scrollable lists), register them using an ID attribute:
-
-```tsx
-<aside data-scroll-restoration-id="sidebar" />
-```
-
-Or programmatically:
-
-```tsx
-useEffect(() => {
-  if (!ref.current) return;
-  return runtime.scroll.registerContainer("sidebar", ref.current);
-}, [runtime]);
-```
-
-Hash anchor offsets can be adjusted using CSS variables:
-
-```css
-:root {
-  --route-scroll-offset: 72px; /* Offset for floating headers */
-}
-```
-
-### 4. View Transitions
-
-```tsx
-<Link href="/reports" viewTransition>
-  Reports
-</Link>
-```
-
-The runtime wraps transitions inside `document.startViewTransition()` if the browser supports it, falling back to instant navigation if unsupported. Reduced-motion preferences are respected automatically.
-
-### 5. Accessibility (A11y)
-
-Upon route change, the runtime announces the update using an invisible ARIA live region and restores keyboard focus in this order:
-1. Elements matching `[data-route-focus]`
-2. `main h1`
-3. `h1`
-4. `main`
-5. `[role="main"]`
-
-Skip links are also supported:
-
-```tsx
-import { SkipNavigation } from "rockzy-link";
-
-<SkipNavigation className="skip-link" targetId="main-content" />
-<main id="main-content">
-  <h1 data-route-focus>Dashboard</h1>
-</main>
-```
-
-### 6. Offline Navigation
-
-Register the built-in offline service worker:
-
-```ts
-runtime.offline.register("/sw.js");
-```
-
-Write the worker file to your public folder using the exported string template:
-
-```ts
-import { OFFLINE_NAVIGATION_SERVICE_WORKER } from "rockzy-link/service-worker";
-```
-
-Failed offline navigations are queued and sequentially flushed strict in-order when the browser regains connection, avoiding LocalStorage race conditions.
-
-### 7. Performance & Safety Details
-
-- **O(N) Snapshot Eviction**: The snapshot eviction algorithms in `ScrollRestorationManager` and `NavigationSnapshotCache` use a single-pass linear O(N) scan. This avoids garbage collection overhead and O(N log N) sorting associated with array clones, ensuring a zero-lag experience.
-- **Sequential Queue Flushing**: When transitioning from offline to online, the `OfflineNavigationManager` sequentially flushes the offline queue using `await` on each transition to prevent concurrent write race conditions.
-
----
-
-## API Reference
-
-### 1. `<Link />` Props
-
-| Prop | Type | Default | Purpose |
-| --- | --- | --- | --- |
-| `href` | `string \| URL` | *Required* | Destination URL |
-| `replace` | `boolean` | `false` | Replace current history entry instead of pushing |
-| `scroll` | `boolean \| string` | `true` | Scroll to top, scroll to specific element ID, or disable scroll restoration |
-| `scrollBehavior` | `"auto" \| "smooth" \| "instant"` | `"auto"` | Navigation scroll transition behavior |
-| `prefetch` | `"hover" \| "viewport" \| "idle" \| "none" \| false` | `"hover"` | Prefetch trigger action |
-| `prefetchPriority` | `"high" \| "medium" \| "low"` | *Inferred* | Override default scheduler priority |
-| `router` | `LinkRouter` | *None* | Router adapter for frameworks |
-| `state` | `unknown` | *None* | History state object attached to the navigation |
-| `viewTransition` | `boolean` | `false` | Use the View Transition API |
-| `disabled` | `boolean` | `false` | Render a disabled `span` instead of `a` |
-| `download` | `boolean \| string` | *None* | Native download attribute |
-| `cacheTags` | `readonly string[]` | *None* | Invalidation tags for prefetched cache entry |
-| `cacheTtlMs` | `number` | *Runtime default* | Cache TTL override |
-| `staleWhileRevalidateMs` | `number` | *Runtime default* | Stale-while-revalidate duration override |
-| `estimateBytes` | `number` | `128000` | Budget weight estimate for scheduler |
-| `hashOffset` | `number` | *CSS/Default* | Pixel offset for hash scrolling |
-| `focus` | `boolean \| string` | *Runtime default* | Programmatic focus destination selector |
-| `announce` | `boolean \| string` | *Runtime default* | Live region announcement text override |
-| `fallbackHref` | `string` | *None* | Fallback URL to load if navigation fails |
-
-#### Event Props
-
-```tsx
-<Link
-  href="/account"
-  onBeforeNavigate={async (href) => {
-    return await confirmNavigation(href); // Return false to block
-  }}
-  onNavigate={(href) => analytics.track("navigate", { href })}
-  onNavigateError={(error, href) => logError(error, href)}
->
-  Account
-</Link>
-```
-
-### 2. `createLinkRuntime(options)`
-
-Creates the main navigation runtime instance.
-
-```ts
-import { createLinkRuntime } from "rockzy-link/runtime";
-
-const runtime = createLinkRuntime({
-  prefetch: {
-    concurrency: 4,
-    bandwidthBudgetBytesPerMinute: 2_500_000,
-    memoryBudgetBytes: 50_000_000,
-    crossTabDedupe: true
+const router = {
+  push: (href: string, opts?: { replace?: boolean; state?: unknown }) => {
+    if (opts?.replace) return appRouter.replace(href);
+    return appRouter.push(href);
   },
-  a11y: {
-    announce: true,
-    restoreFocus: true,
-    focusSelector: "[data-route-focus]"
-  },
-  offline: {
-    enabled: true,
-    optimistic: true
-  },
-  viewTransition: {
-    enabled: true,
-    respectReducedMotion: true
-  },
-  scroll: {
-    restoreOnPopState: true
-  }
-});
-```
-
-#### Runtime Instance Methods
-
-- `runtime.prefetch(href, options)`: Explicitly schedules a prefetch.
-- `runtime.navigate(href, options)`: Triggers navigation via router adapter or History API.
-- `runtime.destroy()`: Cancels background tasks, detaches event listeners.
-- `runtime.routeCache.get(key, kind)`: Retrieves entries.
-- `runtime.routeCache.set(key, kind, data, options)`: Stores data in cache.
-- `runtime.routeCache.invalidateTag(tag)`: Invalidates all entries matching the tag.
-- `runtime.routeCache.invalidateMutation(href, tags)`: Purges paths and tags on mutation.
-- `runtime.scroll.registerContainer(id, element)`: Registers nested scroll views.
-- `runtime.offline.register(swUrl)`: Registers the service worker path.
-- `runtime.offline.queueNavigation(href)`: Manually queues navigation.
-
-### 3. Router Adapter Shape
-
-Adapters interface the runtime with client router frameworks:
-
-```ts
-type LinkRouter = {
-  push: (
-    href: string,
-    opts?: { replace?: boolean; state?: unknown }
-  ) => void | Promise<void>;
-  prefetch?: (href: string) => void | Promise<void>;
+  prefetch: (href: string) => appRouter.prefetch?.(href)
 };
 ```
 
----
+React Router-style wrapper:
 
-## Framework Recipes
+```tsx
+import { useNavigate } from "react-router";
+import { Link } from "rockzy-link";
 
-Coordinate this package's intent-driven scheduler, budgeting, and cache with your favorite web framework.
+export function SmartReactRouterLink(
+  props: Omit<React.ComponentProps<typeof Link>, "router" | "href"> & {
+    to: React.ComponentProps<typeof Link>["to"];
+  }
+) {
+  const navigate = useNavigate();
 
-### Next.js App Router
+  return (
+    <Link
+      {...props}
+      router={{
+        push: (href, opts) =>
+          navigate(href, {
+            replace: opts?.replace,
+            state: opts?.state
+          })
+      }}
+    />
+  );
+}
+```
+
+Next.js App Router-style wrapper:
 
 ```tsx
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Link, LinkRuntimeProvider, createLinkRuntime } from "rockzy-link";
-
-const runtime = createLinkRuntime({
-  prefetch: { concurrency: 3, bandwidthBudgetBytesPerMinute: 2_000_000 }
-});
-
-export function SmartNextLink(props: Omit<React.ComponentProps<typeof Link>, "router">) {
-  const nextRouter = useRouter();
-
-  return (
-    <LinkRuntimeProvider runtime={runtime}>
-      <Link
-        {...props}
-        router={{
-          push: (href, opts) => {
-            if (opts?.replace) nextRouter.replace(href);
-            else nextRouter.push(href);
-          },
-          prefetch: (href) => nextRouter.prefetch(href)
-        }}
-      />
-    </LinkRuntimeProvider>
-  );
-}
-```
-
-### Next.js Pages Router
-
-```tsx
-import { useRouter } from "next/router";
 import { Link } from "rockzy-link";
 
-export function SmartPagesLink(props: Omit<React.ComponentProps<typeof Link>, "router">) {
+export function SmartNextLink(
+  props: Omit<React.ComponentProps<typeof Link>, "router">
+) {
   const router = useRouter();
 
   return (
@@ -384,8 +169,8 @@ export function SmartPagesLink(props: Omit<React.ComponentProps<typeof Link>, "r
       {...props}
       router={{
         push: (href, opts) => {
-          if (opts?.replace) return router.replace(href, undefined, { scroll: false });
-          return router.push(href, undefined, { scroll: false });
+          if (opts?.replace) router.replace(href);
+          else router.push(href);
         },
         prefetch: (href) => router.prefetch(href)
       }}
@@ -394,570 +179,288 @@ export function SmartPagesLink(props: Omit<React.ComponentProps<typeof Link>, "r
 }
 ```
 
-### React Router
+## Route Cache
 
-```tsx
-import { useNavigate } from "react-router";
-import { Link } from "rockzy-link";
-
-export function SmartReactRouterLink(props: Omit<React.ComponentProps<typeof Link>, "router">) {
-  const navigate = useNavigate();
-
-  return (
-    <Link
-      {...props}
-      router={{
-        push: (href, opts) =>
-          navigate(href, {
-            replace: opts?.replace,
-            state: opts?.state
-          })
-      }}
-    />
-  );
-}
-```
-
-### TanStack Router
-
-```tsx
-import { useRouter } from "@tanstack/react-router";
-import { Link } from "rockzy-link";
-
-export function SmartTanStackLink({
-  to,
-  ...props
-}: Omit<React.ComponentProps<typeof Link>, "href" | "router"> & { to: string }) {
-  const router = useRouter();
-
-  return (
-    <Link
-      {...props}
-      href={to}
-      router={{
-        push: (href, opts) =>
-          router.navigate({
-            to: href,
-            replace: opts?.replace
-          }),
-        prefetch: (href) =>
-          router.preloadRoute({
-            to: href
-          })
-      }}
-    />
-  );
-}
-```
-
-### Remix
-
-```tsx
-import { useNavigate } from "@remix-run/react";
-import { Link } from "rockzy-link";
-
-export function SmartRemixLink(props: Omit<React.ComponentProps<typeof Link>, "router">) {
-  const navigate = useNavigate();
-
-  return (
-    <Link
-      {...props}
-      router={{
-        push: (href, opts) =>
-          navigate(href, {
-            replace: opts?.replace,
-            state: opts?.state
-          })
-      }}
-    />
-  );
-}
-```
-
-### Vue 3 + Vue Router
-
-`src/navigation/runtime.ts`:
+Use the route cache for client-side reuse and invalidation.
 
 ```ts
-import { createLinkRuntime } from "rockzy-link/runtime";
-
-export const runtime = createLinkRuntime({
-  prefetch: { concurrency: 4, crossTabDedupe: true }
-});
-```
-
-`SmartLink.vue`:
-
-```vue
-<script setup lang="ts">
-import { computed } from "vue";
-import { useRouter } from "vue-router";
-import { runtime } from "./navigation/runtime";
-
-const props = defineProps<{
-  to: string;
-  replace?: boolean;
-  prefetch?: "hover" | "viewport" | "idle" | "none";
-}>();
-
-const router = useRouter();
-const href = computed(() => props.to);
-
-function priority() {
-  if (props.prefetch === "viewport") return "medium";
-  if (props.prefetch === "idle") return "low";
-  return "high";
-}
-
-function warm() {
-  if (props.prefetch === "none") return;
-  runtime.prefetch(href.value, { priority: priority() });
-}
-
-async function go(event: MouseEvent) {
-  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-  event.preventDefault();
-
-  await runtime.navigate(href.value, {
-    router: {
-      push: (url) => {
-        if (props.replace) return router.replace(url);
-        return router.push(url);
-      }
-    },
-    viewTransition: true
-  });
-}
-</script>
-
-<template>
-  <a :href="href" @mouseenter="warm" @focus="warm" @click="go">
-    <slot />
-  </a>
-</template>
-```
-
-### Nuxt
-
-`plugins/production-link.client.ts`:
-
-```ts
-import { createLinkRuntime } from "rockzy-link/runtime";
-
-export default defineNuxtPlugin(() => {
-  const runtime = createLinkRuntime({
-    prefetch: { concurrency: 3, bandwidthBudgetBytesPerMinute: 2_000_000 }
-  });
-
-  return { provide: { productionLink: runtime } };
-});
-```
-
-`Component.vue`:
-
-```vue
-<script setup lang="ts">
-const props = defineProps<{ to: string }>();
-const { $productionLink } = useNuxtApp();
-
-function warm() {
-  $productionLink.prefetch(props.to, {
-    priority: "high",
-    fetcher: async (href) => {
-      await preloadRouteComponents(href);
-    }
-  });
-}
-
-async function go(event: MouseEvent) {
-  event.preventDefault();
-  await $productionLink.navigate(props.to, {
-    router: { push: (href) => navigateTo(href) },
-    viewTransition: true
-  });
-}
-</script>
-
-<template>
-  <a :href="to" @mouseenter="warm" @focus="warm" @click="go">
-    <slot />
-  </a>
-</template>
-```
-
-### SvelteKit
-
-`src/lib/navigation.ts`:
-
-```ts
-import { createLinkRuntime } from "rockzy-link/runtime";
-
-export const runtime = createLinkRuntime();
-```
-
-`SmartLink.svelte`:
-
-```svelte
-<script lang="ts">
-  import { goto, preloadData } from "$app/navigation";
-  import { runtime } from "$lib/navigation";
-
-  export let href: string;
-  export let replace = false;
-
-  function warm() {
-    runtime.prefetch(href, {
-      priority: "high",
-      fetcher: async (url) => { await preloadData(url); }
-    });
-  }
-
-  async function go(event: MouseEvent) {
-    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-    event.preventDefault();
-
-    await runtime.navigate(href, {
-      router: {
-        push: (url) => goto(url, { replaceState: replace, noScroll: true })
-      },
-      viewTransition: true
-    });
-  }
-</script>
-
-<a {href} on:mouseenter={warm} on:focus={warm} on:click={go}>
-  <slot />
-</a>
-```
-
-### Angular
-
-`production-link.runtime.ts`:
-
-```ts
-import { createLinkRuntime } from "rockzy-link/runtime";
-
-export const productionLinkRuntime = createLinkRuntime();
-```
-
-`production-link.directive.ts`:
-
-```ts
-import { Directive, HostListener, Input } from "@angular/core";
-import { Router } from "@angular/router";
-import { productionLinkRuntime } from "./production-link.runtime";
-
-@Directive({
-  selector: "a[productionLink]",
-  standalone: true
-})
-export class ProductionLinkDirective {
-  @Input("productionLink") href = "/";
-  @Input() replace = false;
-
-  constructor(private readonly router: Router) {}
-
-  @HostListener("mouseenter")
-  @HostListener("focus")
-  warm() {
-    productionLinkRuntime.prefetch(this.href, { priority: "high" });
-  }
-
-  @HostListener("click", ["$event"])
-  async click(event: MouseEvent) {
-    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-    event.preventDefault();
-
-    await productionLinkRuntime.navigate(this.href, {
-      router: {
-        push: (href) => this.router.navigateByUrl(href, { replaceUrl: this.replace })
-      },
-      viewTransition: true
-    });
-  }
-}
-```
-
-```html
-<!-- usage -->
-<a productionLink="/dashboard">Dashboard</a>
-```
-
-### Solid Router
-
-```tsx
-import { useNavigate } from "@solidjs/router";
-import { createLinkRuntime } from "rockzy-link/runtime";
-
-const runtime = createLinkRuntime();
-
-export function SmartSolidLink(props: { href: string; children: any }) {
-  const navigate = useNavigate();
-
-  const warm = () => { runtime.prefetch(props.href, { priority: "high" }); };
-
-  const go = async (event: MouseEvent) => {
-    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-    event.preventDefault();
-
-    await runtime.navigate(props.href, {
-      router: { push: (href) => navigate(href) },
-      viewTransition: true
-    });
-  };
-
-  return (
-    <a href={props.href} onMouseEnter={warm} onFocus={warm} onClick={go}>
-      {props.children}
-    </a>
-  );
-}
-```
-
-### Qwik City
-
-```tsx
-import { component$ } from "@builder.io/qwik";
-import { useNavigate } from "@builder.io/qwik-city";
-import { createLinkRuntime } from "rockzy-link/runtime";
-
-const runtime = createLinkRuntime();
-
-export const SmartQwikLink = component$((props: { href: string }) => {
-  const nav = useNavigate();
-
-  return (
-    <a
-      href={props.href}
-      onMouseEnter$={() => runtime.prefetch(props.href, { priority: "high" })}
-      onClick$={async (event) => {
-        event.preventDefault();
-        await runtime.navigate(props.href, {
-          router: { push: (href) => nav(href) }
-        });
-      }}
-    >
-      <slot />
-    </a>
-  );
-});
-```
-
-### Astro
-
-```astro
----
-// Astro Component
----
-<a href="/docs" data-smart-link>Docs</a>
-
-<script>
-  import { createLinkRuntime } from "rockzy-link/runtime";
-  const runtime = createLinkRuntime();
-
-  for (const link of document.querySelectorAll("[data-smart-link]")) {
-    const href = link.getAttribute("href");
-    if (!href) continue;
-
-    link.addEventListener("mouseenter", () => {
-      runtime.prefetch(href, { priority: "high" });
-    });
-
-    link.addEventListener("click", (event) => {
-      event.preventDefault();
-      runtime.navigate(href, { viewTransition: true });
-    });
-  }
-</script>
-```
-
-### Vite SPA or Vanilla JS
-
-Without an adapter, the runtime relies on the HTML5 History API:
-
-```ts
-import { createLinkRuntime } from "rockzy-link/runtime";
-
-const runtime = createLinkRuntime();
-
-document.addEventListener("click", async (event) => {
-  const target = event.target as HTMLElement;
-  const anchor = target.closest<HTMLAnchorElement>("a[data-route]");
-  if (!anchor) return;
-
-  event.preventDefault();
-  await runtime.navigate(anchor.href, { viewTransition: true });
+runtime.routeCache.set("/api/projects", "api", projects, {
+  ttlMs: 60_000,
+  staleWhileRevalidateMs: 10_000,
+  tags: ["projects"]
 });
 
-window.addEventListener("production-link:navigate", (event) => {
-  const href = (event as CustomEvent).detail.href;
-  renderRoute(href);
-});
+const cached = runtime.routeCache.get<Project[]>("/api/projects", "api");
+
+if (runtime.routeCache.has("/api/projects", "api")) {
+  // fast presence check without counting a read hit
+}
 ```
 
-### htmx
+Invalidate after mutations:
 
-Keep htmx in charge of HTML swaps while utilizing the runtime for prefetching and routing validation:
+```ts
+runtime.routeCache.invalidateTag("projects");
+runtime.routeCache.invalidateMutation("/projects/42", [
+  "project:42",
+  "projects"
+]);
+```
 
-```html
-<a href="/inbox" hx-get="/inbox" hx-target="#main" data-smart-prefetch>
+Cache kinds:
+
+`route-data`, `rsc`, `loader`, `api`, `html`, `script`, `image`, `font`
+
+## Scroll, Focus, And Accessibility
+
+Default behavior:
+
+- scrolls to top after route changes
+- scrolls to hash targets
+- can restore nested scroll containers
+- announces route changes through a hidden live region
+- restores focus to a useful page target
+
+Nested scroll container:
+
+```tsx
+<aside data-scroll-restoration-id="sidebar" />
+```
+
+Focus target:
+
+```tsx
+<main>
+  <h1 data-route-focus>Dashboard</h1>
+</main>
+```
+
+Skip link:
+
+```tsx
+import { SkipNavigation } from "rockzy-link";
+
+<SkipNavigation targetId="main-content" />
+```
+
+Disable scroll reset for React Router-style behavior:
+
+```tsx
+<Link to="/inbox" preventScrollReset>
   Inbox
-</a>
-
-<script type="module">
-  import { createLinkRuntime } from "rockzy-link/runtime";
-  const runtime = createLinkRuntime();
-
-  document.addEventListener("mouseenter", (event) => {
-    const link = event.target.closest("[data-smart-prefetch]");
-    if (!link) return;
-    runtime.prefetch(link.href, { priority: "high" });
-  }, true);
-</script>
+</Link>
 ```
 
-### Framework Selection Guide
-
-| Framework | Uses React `<Link>`? | Preferred Import | Primary Navigation Owner |
-| --- | --- | --- | --- |
-| **React SPA** | Yes | `rockzy-link` | Runtime / Client Router |
-| **Next.js** | Yes (wrapper) | `rockzy-link` | Next.js Router |
-| **Remix** | Yes | `rockzy-link` | Remix Router |
-| **React Router** | Yes | `rockzy-link` | React Router |
-| **TanStack Router** | Yes | `rockzy-link` | TanStack Router |
-| **Vue 3** | No | `rockzy-link/runtime` | Vue Router |
-| **Nuxt** | No | `rockzy-link/runtime` | Nuxt Engine |
-| **SvelteKit** | No | `rockzy-link/runtime` | SvelteKit Navigation |
-| **Angular** | No | `rockzy-link/runtime` | Angular Router |
-| **Solid** | Usually No | `rockzy-link/runtime` | Solid Router |
-| **Qwik** | No | `rockzy-link/runtime` | Qwik City Router |
-| **Astro** | Island Only | `rockzy-link` / `/runtime` | Astro Transitions / Runtime |
-| **Vanilla** | No | `rockzy-link/runtime` | Runtime History API |
-
----
-
-## Integration Code Snaps
-
-### App Root Setup (React)
+## View Transitions
 
 ```tsx
-import { createRoot } from "react-dom/client";
-import { LinkRuntimeProvider, createLinkRuntime } from "rockzy-link";
-import { App } from "./app";
-
-const runtime = createLinkRuntime();
-
-createRoot(document.getElementById("root")!).render(
-  <LinkRuntimeProvider runtime={runtime}>
-    <App />
-  </LinkRuntimeProvider>
-);
+<Link href="/photos/42" viewTransition>
+  Open photo
+</Link>
 ```
 
-### Guarded / Protected Routes
+The runtime uses `document.startViewTransition()` when available. Reduced-motion users are respected by default.
+
+## Navigation Guards
+
+Use guards to stop navigation when a session expired or a form has unsaved changes.
+
+```ts
+const unregister = runtime.beforeNavigate([
+  async ({ href }) => confirmSession(href),
+  async ({ from, href }) => confirmUnsavedChanges({ from, href })
+]);
+```
+
+Per-link:
 
 ```tsx
 <Link
   href="/account"
-  prefetch="none"
-  onBeforeNavigate={async () => {
-    const isSessionValid = await confirmSession();
-    return isSessionValid; // Returns false to cancel navigation
-  }}
+  beforeNavigate={async () => await confirmSession()}
 >
   Account
 </Link>
 ```
 
-### Manual Mutation Invalidation
+Return `false` to block the navigation.
+
+## Offline Navigation
 
 ```ts
-async function updateProfile(input: ProfileInput) {
-  await api.profile.update(input);
-  // Clear cached data on mutation
-  runtime.routeCache.invalidateMutation("/profile", ["profile", "user"]);
-}
+runtime.offline.register("/sw.js");
 ```
 
-### Dense / Smart Sidebars
+You can write the packaged worker into your app:
+
+```ts
+import { writeFileSync } from "node:fs";
+import { OFFLINE_NAVIGATION_SERVICE_WORKER } from "rockzy-link/service-worker";
+
+writeFileSync("public/sw.js", OFFLINE_NAVIGATION_SERVICE_WORKER);
+```
+
+Offline lifecycle callbacks:
+
+```ts
+createLinkRuntime({
+  offline: {
+    enabled: true,
+    optimistic: true,
+    onOfflineQueueAdded: ({ navigation }) => {
+      console.log("Queued", navigation.href);
+    },
+    onOfflineSyncing: ({ queueLength }) => {
+      console.log("Syncing", queueLength);
+    },
+    onOfflineSynced: ({ syncedCount }) => {
+      console.log("Synced", syncedCount);
+    }
+  }
+});
+```
+
+Events are also dispatched on `window`:
+
+`offline-queue:added`, `syncing`, `synced`
+
+## URL Security
 
 ```tsx
-function Sidebar() {
-  return (
-    <nav>
-      {items.map((item) => (
-        <Link
-          key={item.href}
-          href={item.href}
-          prefetch="hover"
-          estimateBytes={96_000}
-          cacheTags={item.tags}
-        >
-          {item.label}
-        </Link>
-      ))}
-    </nav>
-  );
-}
+<Link href={userProvidedHref}>Open</Link>
 ```
 
-> [!TIP]
-> Smart pointer intent delays trigger during hover events. Quick cursor sweeps across a dense sidebar won't flood the browser with resource-fetching requests.
-
-### Node Server Cache Setup
-
-When utilizing the `createNodeRouteCache` wrapper, invalidations propagate down to evict entries in both the in-memory cache and server-side database.
+Unsafe URLs are rendered as `#`.
 
 ```ts
-import { createNodeRouteCache } from "rockzy-link/cache/node";
+import { classifyHref, sanitizeHref } from "rockzy-link/security";
 
-const cache = await createNodeRouteCache({
-  maxEntries: 2_000,
-  maxBytes: 200_000_000
-});
-
-cache.set("/api/products", "api", products, {
-  ttlMs: 120_000,
-  tags: ["products"]
-});
+const info = classifyHref(userProvidedHref);
+const safeHref = sanitizeHref(userProvidedHref);
 ```
 
-### Browser Cache Storage warming
+Blocked protocols include `javascript:`, `vbscript:`, and `data:`.
 
-```ts
-import { prefetchToBrowserCache } from "rockzy-link/cache/browser";
+## Public Imports
 
-await prefetchToBrowserCache("/docs/getting-started");
+| Import | Use |
+| --- | --- |
+| `rockzy-link` | React component and public utilities |
+| `rockzy-link/runtime` | Framework-neutral runtime |
+| `rockzy-link/cache` | In-memory route cache |
+| `rockzy-link/cache/browser` | Browser Cache Storage helpers |
+| `rockzy-link/cache/node` | Node cache adapter |
+| `rockzy-link/prefetch` | Smart prefetch scheduler |
+| `rockzy-link/security` | URL classification and sanitization |
+| `rockzy-link/navigation/scroll` | Scroll restoration manager |
+| `rockzy-link/navigation/view-transitions` | View Transition helper |
+| `rockzy-link/service-worker` | Offline service worker script |
+
+## Benchmarks
+
+These are local results from Windows, Node `v24.12.0`, and headless Chromium on May 28, 2026. Treat them as directional, not universal.
+
+### Browser Interaction
+
+Command:
+
+```bash
+npm run benchmark:browser
 ```
 
----
+| Benchmark | mean | median | p95 | p99 |
+| --- | ---: | ---: | ---: | ---: |
+| `rockzy-link` React click-to-render | 16.54 ms | 16.7 ms | 17.6 ms | 17.9 ms |
+| React controlled anchor click-to-render | 16.64 ms | 16.6 ms | 17.6 ms | 18.4 ms |
+| Native `history.pushState` | 0.3372 ms | 0.3 ms | 0.6 ms | 1 ms |
+| React hydrate route shell | 16.32 ms | 16.3 ms | 17.7 ms | 18.1 ms |
 
-## Lessons, Tips, and Tricks
+Real React Router, Next Link, and TanStack Router browser benchmarks are skipped until those packages are installed in the workspace.
 
-1. **Prefetch Less, But Earlier**: A fast site doesn't load everything. It loads the right thing at the right time. Use `hover` for high-confidence links, `viewport` for primary content, and `idle` for cheap background prefetching.
-2. **Set Budgets Wisely**: Do not let every third-party script flood the connection. Designate this runtime as the singular manager of prefetch budgeting.
-3. **Mutation Invalidation Tags**: Avoid using general tag categories (e.g. `data`, `page`). Use domain-specific concepts like `user:42` or `project:abc` so that mutations invalidate exactly what is necessary.
-4. **Scroll restoration is not an afterthought**: Ensure any scrollable nested panels use `data-scroll-restoration-id` attributes to guarantee consistent scroll layouts during session history navigation.
-5. **View Transitions**: Always keep `respectReducedMotion: true` enabled. Never force page transitions on users with motion sensitivities.
+### Runtime Throughput
 
----
+Command:
 
-## Production Checklist
+```bash
+npm run benchmark:ci
+```
 
-- [x] Unsafe URLs are sanitized and resolve to `#`.
-- [x] External URLs automatically apply `noopener noreferrer`.
-- [x] Prefetching is explicitly set to `none` on mutation-sensitive or secure pages.
-- [x] Hover delays are configured to prevent menu scans from flooding the network.
-- [x] Viewport links are configured and ordered by layout visibility.
-- [x] Back/forward navigation actions restore both main and nested container scrolls.
-- [x] Accessibility live regions announce new paths and reset keyboard focus.
-- [x] Reduced-motion preferences are respected during page animations.
-- [x] All cache mutations are explicitly configured with invalidation tags.
-- [x] Offline Service Worker is registered in supportive environments.
-- [x] Code passes `npm run typecheck`, `npm run build`, and `npm test`.
+| Benchmark | ops/sec |
+| --- | ---: |
+| Route cache set/get HTML | 329,490 |
+| Prefetch scheduler enqueue and pump | 193,899 |
+| Navigation runtime router navigation | 1,050,434 |
+| Guarded navigation | 597,499 |
+| Warm cache navigation | 467,771 |
+| Prefetched navigation | 705,081 |
 
----
+### Bundle Size
+
+Command:
+
+```bash
+npm run benchmark:bundle-size
+```
+
+| Package / Library | Raw | Minified | Gzip | Brotli |
+| --- | ---: | ---: | ---: | ---: |
+| `rockzy-link` core + link | 13.89 KB | 10.29 KB | 3.03 KB | 2.70 KB |
+| React Router DOM comparison | 162.00 KB | 57.00 KB | 18.00 KB | 15.50 KB |
+| TanStack Router comparison | 280.00 KB | 95.00 KB | 26.00 KB | 22.50 KB |
+| Next Link simulated context | 24.00 KB | 9.50 KB | 3.40 KB | 3.00 KB |
+
+Size-limit output from `npm run publish:check`:
+
+| Entry | Brotli |
+| --- | ---: |
+| Core entry | 350 B |
+| React link component | 2.86 KB |
+| Navigation runtime | 3.37 KB |
+| Prefetch scheduler | 4.24 KB |
+
+### Memory
+
+Command:
+
+```bash
+npm run benchmark:memory
+```
+
+| Scenario | Result |
+| --- | --- |
+| 5,000 cache inserts with max 500 entries | Cache stayed at 500 entries |
+| Cache heap growth | 0.40 MB |
+| Tag invalidation stress | Final cache size 0 |
+| 10,000 long-session prefetch/navigation loops | 4.10 MB heap growth |
+
+## Scripts
+
+| Command | What It Does |
+| --- | --- |
+| `npm test` | Run Vitest tests |
+| `npm run typecheck` | Type-check source |
+| `npm run build` | Build `dist` |
+| `npm run ci` | Typecheck, test, and build |
+| `npm run benchmark` | Run Tinybench locally |
+| `npm run benchmark:ci` | Run benchmark regression gate |
+| `npm run benchmark:browser` | Run Playwright Chromium benchmark |
+| `npm run benchmark:bundle-size` | Run bundle comparison report |
+| `npm run benchmark:memory` | Run memory stability benchmark |
+| `npm run size` | Run size-limit |
+| `npm run publish:check` | Run the full pre-publish check |
+
+Use `npm run publish:check`, not `publish:check` directly.
+
+## More Docs
+
+- [Package overview](docs/package-overview.md)
+- [API reference](docs/api-reference.md)
+- [Developer guide](docs/dev-guide.md)
+- [Framework recipes](docs/framework-recipes.md)
+- [Code snippets](docs/code-snaps.md)
+- [Lessons and tips](docs/lessons-and-tips.md)
+- [Benchmarks](docs/benchmarks.md)
 
 ## License
 
-MIT License. See [LICENSE](file:///c:/Users/domin/OneDrive/Documents/New%20project/LICENSE) for details.
+MIT. See [LICENSE](LICENSE).

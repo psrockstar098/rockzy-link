@@ -99,7 +99,10 @@ export class ScrollRestorationManager {
     const id = idOrHash.startsWith("#")
       ? decodeURIComponent(idOrHash.slice(1))
       : idOrHash;
-    const target = document.getElementById(id);
+    let target = document.getElementById(id);
+    if (!target) {
+      target = document.querySelector<HTMLElement>(`a[name="${cssEscape(id)}"]`);
+    }
     if (!target) return false;
 
     const offset = options.hashOffset ?? readHashOffset();

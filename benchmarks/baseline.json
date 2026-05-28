@@ -1,0 +1,44 @@
+{
+  "threshold": 0.35,
+  "checks": {
+    "route-cache: set/get html": {
+      "minHz": 330336
+    },
+    "route-cache: tag invalidation": {
+      "minHz": 17032
+    },
+    "prefetch-scheduler: enqueue and pump": {
+      "minHz": 181778
+    },
+    "prefetch-scheduler: priority escalation": {
+      "minHz": 172331
+    },
+    "navigation-runtime: router navigation": {
+      "minHz": 10358
+    },
+    "navigation-runtime: guarded navigation": {
+      "minHz": 10524
+    },
+    "comparisons: rockzy-link navigation": {
+      "minHz": 10867
+    },
+    "comparisons: React Router navigation (simulated)": {
+      "minHz": 15182
+    },
+    "comparisons: Next Link navigation (simulated)": {
+      "minHz": 21709
+    },
+    "comparisons: Native Browser navigation": {
+      "minHz": 21025
+    },
+    "cache-scenarios: Cold navigation (network request)": {
+      "minHz": 62
+    },
+    "cache-scenarios: Warm cache navigation": {
+      "minHz": 6380
+    },
+    "cache-scenarios: Prefetched navigation": {
+      "minHz": 4331
+    }
+  }
+}

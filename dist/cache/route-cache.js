@@ -11,6 +11,7 @@ export class RouteCache {
     defaultStaleWhileRevalidateMs;
     now;
     bytes = 0;
+    lastPruneTime = 0;
     constructor(options = {}) {
         this.maxEntries = options.maxEntries ?? DEFAULT_MAX_ENTRIES;
         this.maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
@@ -46,6 +47,17 @@ export class RouteCache {
             void Promise.resolve(entry.revalidate()).catch(() => undefined);
         }
         return { value: entry.value, entry, stale };
+    }
+    has(key, kind) {
+        const cacheKey = createCacheKey(kind, key);
+        const entry = this.entries.get(cacheKey);
+        if (!entry)
+            return false;
+        if (entry.expiresAt <= this.now()) {
+            this.delete(key, kind);
+            return false;
+        }
+        return true;
     }
     set(key, kind, value, options = {}) {
         const now = this.now();
@@ -146,7 +158,13 @@ export class RouteCache {
         return Array.from(this.entries.keys());
     }
     evictIfNeeded() {
-        this.pruneExpired();
+        const now = this.now();
+        const overEntries = this.entries.size > this.maxEntries;
+        const overBytes = this.maxBytes > 0 && this.bytes > this.maxBytes;
+        if (overEntries || overBytes || now - this.lastPruneTime >= 5000) {
+            this.pruneExpired();
+            this.lastPruneTime = now;
+        }
         while (this.entries.size > this.maxEntries ||
             (this.maxBytes > 0 && this.bytes > this.maxBytes)) {
             const lru = this.findLruKey();
@@ -202,13 +220,13 @@ export function estimateBytes(value) {
         return 0;
     if (typeof value === "string")
         return value.length * 2;
-    if (value instanceof Blob)
+    if (typeof Blob !== "undefined" && value instanceof Blob)
         return value.size;
-    if (value instanceof ArrayBuffer)
+    if (typeof ArrayBuffer !== "undefined" && value instanceof ArrayBuffer)
         return value.byteLength;
-    if (ArrayBuffer.isView(value))
+    if (typeof ArrayBuffer !== "undefined" && ArrayBuffer.isView(value))
         return value.byteLength;
-    if (value instanceof Response) {
+    if (typeof Response !== "undefined" && value instanceof Response) {
         const contentLength = value.headers.get("content-length");
         return contentLength ? Number(contentLength) || 0 : 16_384;
     }

@@ -1,124 +1,91 @@
 # Package Overview
 
-`rockzy-link` is a navigation runtime plus a React `<Link>` component.
+`rockzy-link` is a navigation helper. It is not a router.
 
-The important distinction:
+Use it when you already have navigation, but you want the pieces around navigation to behave well:
 
-- React apps can use the `<Link>` component.
-- Any framework can use the runtime directly through `rockzy-link/runtime`.
+- safe URLs
+- prefetching
+- route caching
+- scroll restoration
+- focus and announcements
+- View Transitions
+- offline recovery
+- performance measurements
 
-## What The Package Solves
+## Two Ways To Use It
 
-Most apps start with a simple link and later discover navigation is actually a system:
+### React Apps
 
-- Is this URL safe to render?
-- Should this route be prefetched?
-- Is the network already busy?
-- Did another tab already prefetch this route?
-- Should scroll reset, restore, or move to a hash target?
-- Should the page announce a route change?
-- Can the navigation animate?
-- What happens offline?
-- How do back and forward feel instant?
-- What cache entries should a mutation invalidate?
-
-This package centralizes those decisions in a runtime so links, routers, dashboards, menus, and framework adapters behave consistently.
-
-## Package Parts
-
-### React Component
-
-Import from the root package:
+Use the React component:
 
 ```tsx
-import { Link, LinkRuntimeProvider } from "rockzy-link";
+import { Link } from "rockzy-link";
+
+<Link href="/dashboard">Dashboard</Link>
 ```
 
-Use this in React, Next.js client components, Remix, React Router, TanStack Router, Astro React islands, and Vite React SPAs.
+You can also use `to` if your team is used to React Router:
 
-### Framework-Neutral Runtime
+```tsx
+<Link to="/settings">Settings</Link>
+```
 
-Import from the runtime subpath:
+### Any Framework
+
+Use the runtime:
 
 ```ts
 import { createLinkRuntime } from "rockzy-link/runtime";
+
+const runtime = createLinkRuntime();
 ```
 
-Use this in Vue, Nuxt, SvelteKit, Angular, Solid, Qwik, Astro scripts, custom routers, and vanilla JavaScript.
-
-### Cache Utilities
+Then connect your router:
 
 ```ts
-import { RouteCache } from "rockzy-link/cache";
-import { prefetchToBrowserCache } from "rockzy-link/cache/browser";
-import { createNodeRouteCache } from "rockzy-link/cache/node";
+await runtime.navigate("/dashboard", {
+  router: {
+    push: (href) => appRouter.push(href),
+    prefetch: (href) => appRouter.prefetch?.(href)
+  }
+});
 ```
 
-### Prefetch Scheduler
-
-```ts
-import { SmartPrefetchScheduler } from "rockzy-link/prefetch";
-```
-
-The `SmartPrefetchScheduler` is fully isomorphic/SSR-safe, employing environment-agnostic timeout scheduling so that it can be safely imported and executed in node environments.
-
-### URL Security
-
-```ts
-import { classifyHref, sanitizeHref } from "rockzy-link/security";
-```
-
-## How It Works
+## What It Does
 
 ```mermaid
 flowchart LR
-  A["User intent: hover, focus, viewport, idle, click"] --> B["URL classifier"]
-  B --> C{"Safe internal route?"}
-  C -->|No| D["Let browser handle or sanitize unsafe href"]
-  C -->|Yes| E["Smart prefetch scheduler"]
-  E --> F["Network and device budget"]
-  E --> G["Cross-tab dedupe"]
-  E --> H["Route cache and browser cache"]
-  A --> I["Navigation runtime"]
-  I --> J["Router adapter or History API"]
-  I --> K["Scroll restoration"]
-  I --> L["View Transition API"]
-  I --> M["A11y announce and focus"]
-  I --> N["Offline queue and retry"]
-  I --> O["Back/forward snapshots"]
+  A["User intent"] --> B["URL safety"]
+  B --> C["Prefetch scheduler"]
+  C --> D["Network budget"]
+  C --> E["Cross-tab dedupe"]
+  C --> F["Route cache"]
+  A --> G["Navigate"]
+  G --> H["Router or History API"]
+  G --> I["Scroll"]
+  G --> J["Focus and announce"]
+  G --> K["View transition"]
+  G --> L["Offline queue"]
 ```
 
-## Runtime Lifecycle
-
-1. A link, component, or framework adapter calls `runtime.prefetch()` or `runtime.navigate()`.
-2. The URL classifier rejects unsafe protocols such as `javascript:`.
-3. Prefetch requests enter a priority queue.
-4. The scheduler applies concurrency, network, device, memory, and stale-task budgets.
-5. The scheduler deduplicates same-route work locally and across tabs.
-6. Successful responses can warm the route cache and browser Cache Storage.
-7. Navigation saves current scroll and DOM snapshots.
-8. The runtime delegates to a router adapter when provided.
-9. Without an adapter, the runtime uses the History API and dispatches route events.
-10. After navigation, it restores scroll, announces the change, restores focus, and runs view transitions if available.
-
-## Import Map
+## Public Imports
 
 | Import | Use |
 | --- | --- |
-| `rockzy-link` | React component plus all public utilities |
-| `rockzy-link/runtime` | Framework-neutral runtime |
+| `rockzy-link` | React component and public utilities |
+| `rockzy-link/runtime` | Runtime without importing React |
 | `rockzy-link/cache` | In-memory route cache |
 | `rockzy-link/cache/browser` | Browser Cache Storage helpers |
-| `rockzy-link/cache/node` | `@cacheable/node-cache` adapter |
+| `rockzy-link/cache/node` | Node cache adapter |
 | `rockzy-link/prefetch` | Smart prefetch scheduler |
-| `rockzy-link/security` | URL classification and sanitization |
-| `rockzy-link/navigation/scroll` | Scroll restoration manager |
+| `rockzy-link/security` | URL sanitization and classification |
+| `rockzy-link/navigation/scroll` | Scroll restoration |
 | `rockzy-link/navigation/view-transitions` | View Transition helper |
-| `rockzy-link/service-worker` | Offline service worker script string |
+| `rockzy-link/service-worker` | Offline worker script |
 
-## Mental Model
+## Simple Rule
 
-Use the runtime as a traffic controller.
+Let your framework own route matching and rendering.
 
-Your framework still owns rendering and route matching. This package decides when it is safe and worthwhile to warm, navigate, restore, announce, animate, retry, or evict.
-
+Let `rockzy-link` own link safety, prefetch timing, cache coordination, scroll/focus behavior, and offline recovery.

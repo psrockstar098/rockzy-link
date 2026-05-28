@@ -1,1 +1,1 @@
-{"version":3,"file":"service-worker-script.js","sourceRoot":"","sources":["../../src/offline/service-worker-script.ts"],"names":[],"mappings":"AAAA,MAAM,CAAC,MAAM,iCAAiC,GAAG;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;CAwChD,CAAC"}
+{"version":3,"file":"service-worker-script.js","sourceRoot":"","sources":["../../src/offline/service-worker-script.ts"],"names":[],"mappings":"AAAA,MAAM,CAAC,MAAM,iCAAiC,GAAG;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;CAiChD,CAAC"}

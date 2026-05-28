@@ -1,0 +1,44 @@
+# Runs Tinybench performance checks for every push and pull request.
+# The benchmark runner uploads artifacts and fails when throughput drops below baseline tolerance.
+name: Benchmark
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    name: Tinybench regression gate
+    runs-on: ubuntu-latest
+
+    env:
+      BENCHMARK_REGRESSION_THRESHOLD: 0.35
+      BENCHMARK_TIME_MS: 1000
+      CI: true
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run benchmark suite
+        run: npm run benchmark:ci
+
+      - name: Upload benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmarks/results/
+          if-no-files-found: warn

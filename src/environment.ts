@@ -39,7 +39,7 @@ export function prefersReducedMotion(): boolean {
 export function queueMicrotaskSafe(callback: () => void): void {
   if (typeof queueMicrotask === "function") {
     queueMicrotask(callback);
-    return;
+  } else {
+    void Promise.resolve().then(callback);
   }
-  Promise.resolve().then(callback).catch(() => undefined);
 }

@@ -6,13 +6,25 @@ import type { NavigationSnapshotOptions } from "../navigation/navigation-snapsho
 import { ScrollRestorationManager } from "../navigation/scroll-restoration.js";
 import type { ViewTransitionConfig } from "../navigation/view-transitions.js";
 import { OfflineNavigationManager } from "../offline/offline-navigation.js";
+import type { OfflineNavigationManagerOptions } from "../offline/offline-navigation.js";
 import { SmartPrefetchScheduler } from "../prefetch/scheduler.js";
-import type { PrefetchFetcher, PrefetchSchedulerOptions, PrefetchTaskOptions } from "../prefetch/scheduler.js";
+import type { PrefetchDiagnostics, PrefetchFetcher, PrefetchSchedulerOptions, PrefetchTaskOptions } from "../prefetch/scheduler.js";
 import type { Href, LinkRouter, PrefetchPriority, ScrollBehavior } from "../types.js";
 export interface RuntimePrefetchOptions extends Partial<Omit<PrefetchTaskOptions, "priority">> {
     priority?: PrefetchPriority | undefined;
     fetcher?: PrefetchFetcher | undefined;
 }
+export interface RoutePrefetchRule {
+    match: string | RegExp | ((href: string) => boolean);
+    options: Omit<RuntimePrefetchOptions, "fetcher">;
+}
+export interface NavigationGuardContext {
+    href: string;
+    from: string;
+    options: NavigationOptions;
+    runtime: LinkRuntime;
+}
+export type NavigationGuard = (context: NavigationGuardContext) => boolean | void | Promise<boolean | void>;
 export interface NavigationOptions {
     router?: LinkRouter | undefined;
     replace?: boolean | undefined;
@@ -25,10 +37,14 @@ export interface NavigationOptions {
     announce?: boolean | string | undefined;
     fallbackHref?: string | undefined;
     restoreDomSnapshot?: boolean | undefined;
+    guards?: NavigationGuard | readonly NavigationGuard[] | undefined;
 }
 export interface LinkRuntimeOptions {
     routeCache?: RouteCache | RouteCacheOptions | undefined;
-    prefetch?: Omit<PrefetchSchedulerOptions, "routeCache" | "fetcher"> | undefined;
+    prefetch?: Omit<PrefetchSchedulerOptions, "routeCache"> | undefined;
+    prefetchRoutes?: readonly RoutePrefetchRule[] | undefined;
+    onPrefetchDiagnostics?: ((diagnostics: PrefetchDiagnostics) => void) | undefined;
+    beforeNavigate?: NavigationGuard | readonly NavigationGuard[] | undefined;
     scroll?: {
         restoreOnPopState?: boolean | undefined;
     } | undefined;
@@ -42,7 +58,7 @@ export interface LinkRuntimeOptions {
     offline?: {
         enabled?: boolean | undefined;
         optimistic?: boolean | undefined;
-    } | undefined;
+    } & OfflineNavigationManagerOptions | undefined;
 }
 export declare class LinkRuntime {
     readonly routeCache: RouteCache;
@@ -52,16 +68,27 @@ export declare class LinkRuntime {
     readonly offline: OfflineNavigationManager;
     readonly snapshots: NavigationSnapshotCache;
     private readonly options;
+    private readonly beforeNavigateGuards;
     private readonly cleanup;
     constructor(options?: LinkRuntimeOptions);
     prefetch(hrefLike: Href, options?: RuntimePrefetchOptions): AbortController;
-    navigate(hrefLike: Href, options?: NavigationOptions): Promise<void>;
+    navigate(hrefLike: Href, options?: NavigationOptions): void | Promise<void>;
+    private continueNavigate;
     destroy(): void;
+    beforeNavigate(guards: NavigationGuard | readonly NavigationGuard[]): () => void;
+    private addBeforeNavigateGuards;
+    private runBeforeNavigate;
+    private runBeforeNavigateAsync;
+    private runBeforeNavigateLocalAsync;
+    private resolveRoutePrefetchOptions;
     private performNavigation;
     private optimisticHistoryNavigation;
     private shouldQueueOfflineNavigation;
     private applyScroll;
     private applyAccessibility;
+    private canUseFastNavigation;
+    private shouldCaptureSnapshot;
+    private shouldUseViewTransition;
     private resolveViewTransition;
     private installBrowserListeners;
 }

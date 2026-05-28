@@ -41,11 +41,13 @@ export declare class RouteCache {
     private readonly defaultStaleWhileRevalidateMs;
     private readonly now;
     private bytes;
+    private lastPruneTime;
     constructor(options?: RouteCacheOptions);
     get totalBytes(): number;
     get size(): number;
     setMemoryBudget(maxBytes: number): void;
     get<T = unknown>(key: string, kind: CacheKind): CacheReadResult<T> | undefined;
+    has(key: string, kind: CacheKind): boolean;
     set<T = unknown>(key: string, kind: CacheKind, value: T, options?: CacheSetOptions): CacheEntry<T>;
     delete(key: string, kind: CacheKind): boolean;
     invalidateTag(tag: string): number;

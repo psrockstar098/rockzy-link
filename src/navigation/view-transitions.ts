@@ -5,10 +5,10 @@ export interface ViewTransitionConfig {
   respectReducedMotion?: boolean;
 }
 
-export async function runWithViewTransition(
+export function runWithViewTransition(
   callback: () => void | Promise<void>,
   config: ViewTransitionConfig = {}
-): Promise<void> {
+): void | Promise<void> {
   const enabled = config.enabled ?? true;
   const respectReducedMotion = config.respectReducedMotion ?? true;
   const startViewTransition = isBrowser()
@@ -20,10 +20,9 @@ export async function runWithViewTransition(
     !startViewTransition ||
     (respectReducedMotion && prefersReducedMotion())
   ) {
-    await callback();
-    return;
+    return callback();
   }
 
   const transition = startViewTransition(callback);
-  await transition.updateCallbackDone;
+  return transition.updateCallbackDone;
 }

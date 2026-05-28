@@ -7,9 +7,11 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
-    "dist",
-    "docs",
-    "README.md"
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "docs/**/*.md",
+    "README.md",
+    "LICENSE"
   ],
   "exports": {
     ".": {
@@ -58,6 +60,18 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "benchmark": "npm run build && node benchmarks/run.mjs",
+    "benchmark:browser": "npm run build && node benchmarks/browser.mjs",
+    "benchmark:bundle-size": "npm run build && node benchmarks/bundle-size.mjs",
+    "benchmark:ci": "npm run build && node benchmarks/run.mjs --ci",
+    "benchmark:memory": "npm run build && node --expose-gc benchmarks/memory.mjs",
+    "ci": "npm run typecheck && npm test && npm run build",
+    "pack:check": "npm pack --dry-run",
+    "prepack": "npm run build",
+    "publish:check": "npm run ci && npm run size:ci && npm run benchmark:ci && npm run security:audit && npm run pack:check",
+    "security:audit": "npm audit --audit-level=moderate",
+    "size": "npm run build && size-limit --config .size-limit.cjs",
+    "size:ci": "npm run size",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
@@ -73,10 +87,14 @@
     }
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
+    "@size-limit/file": "^12.1.0",
     "@testing-library/react": "^16.3.0",
     "@types/react": "^19.1.6",
     "@vitejs/plugin-react": "^5.0.0",
     "jsdom": "^26.1.0",
+    "size-limit": "^12.1.0",
+    "tinybench": "^6.0.2",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4"
   },
@@ -92,6 +110,10 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/fullra/production-link.git"
-  }
+    "url": "git+https://github.com/psrockstar098/rockzy-link.git"
+  },
+  "bugs": {
+    "url": "https://github.com/psrockstar098/rockzy-link/issues"
+  },
+  "homepage": "https://github.com/psrockstar098/rockzy-link#readme"
 }

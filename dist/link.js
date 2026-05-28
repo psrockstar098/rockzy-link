@@ -12,11 +12,12 @@ export function LinkRuntimeProvider({ runtime, children }) {
 export function useLinkRuntime() {
     return useContext(LinkRuntimeContext) ?? getDefaultLinkRuntime();
 }
-export const Link = forwardRef(({ href, replace = false, scroll = true, scrollBehavior = "auto", prefetch = "hover", prefetchPriority, router, state, onBeforeNavigate, onNavigate, onNavigateError, onClick, onMouseEnter, onPointerEnter, onPointerLeave, onFocus, target, rel, download, disabled = false, children, viewTransition = false, cacheTags, cacheTtlMs, staleWhileRevalidateMs, estimateBytes, hashOffset, focus, announce, fallbackHref, ...rest }, ref) => {
+export const Link = forwardRef(({ href, to, replace = false, scroll = true, scrollBehavior = "auto", prefetch = "hover", prefetchPriority, router, state, onBeforeNavigate, beforeNavigate, onNavigate, onNavigateError, onClick, onPointerDown, onMouseEnter, onPointerEnter, onPointerLeave, onFocus, target, rel, download, disabled = false, children, viewTransition = false, cacheTags, cacheTtlMs, staleWhileRevalidateMs, estimateBytes, prefetchTimeoutMs, prefetchMaxRetries, prefetchRetryBaseDelayMs, prefetchRetryMaxDelayMs, prefetchRetryBackoffFactor, prefetchRetryJitterRatio, preloadAssets, speculationRules, viewportScrollDebounceMs = 120, viewportScrollVelocityThreshold = 1.4, hashOffset, focus, announce, fallbackHref, reloadDocument = false, preventScrollReset = false, ...rest }, ref) => {
     const runtime = useLinkRuntime();
     const anchorRef = useRef(null);
-    const hrefInfo = useMemo(() => classifyHref(href), [href]);
-    const behavior = prefetch === false ? "none" : prefetch;
+    const resolvedHref = href ?? to ?? "#";
+    const hrefInfo = useMemo(() => classifyHref(resolvedHref), [resolvedHref]);
+    const behavior = normalizePrefetchBehavior(prefetch);
     const priority = prefetchPriority ?? priorityForBehavior(behavior);
     const prefetchFetcher = useMemo(() => createRouterPrefetcher(router), [router]);
     const setRef = useCallback((node) => {
@@ -27,20 +28,28 @@ export const Link = forwardRef(({ href, replace = false, scroll = true, scrollBe
             ref.current = node;
         }
     }, [ref]);
-    const schedulePrefetch = useCallback((viewportScore) => {
+    const schedulePrefetch = useCallback((viewportScore, priorityOverride) => {
         if (behavior === "none")
             return;
         if (hrefInfo.isUnsafe || hrefInfo.isExternal || hrefInfo.isHash)
             return;
         runtime.prefetch(hrefInfo.href, {
-            priority,
+            priority: priorityOverride ?? priority,
             fetcher: prefetchFetcher,
             kind: "html",
             tags: cacheTags,
             ttlMs: cacheTtlMs,
             staleWhileRevalidateMs,
             estimateBytes,
-            viewportScore
+            timeoutMs: prefetchTimeoutMs,
+            maxRetries: prefetchMaxRetries,
+            retryBaseDelayMs: prefetchRetryBaseDelayMs,
+            retryMaxDelayMs: prefetchRetryMaxDelayMs,
+            retryBackoffFactor: prefetchRetryBackoffFactor,
+            retryJitterRatio: prefetchRetryJitterRatio,
+            viewportScore,
+            assets: preloadAssets,
+            speculationRules
         });
     }, [
         behavior,
@@ -51,9 +60,17 @@ export const Link = forwardRef(({ href, replace = false, scroll = true, scrollBe
         hrefInfo.isExternal,
         hrefInfo.isHash,
         hrefInfo.isUnsafe,
+        preloadAssets,
         prefetchFetcher,
+        prefetchMaxRetries,
+        prefetchRetryBackoffFactor,
+        prefetchRetryBaseDelayMs,
+        prefetchRetryJitterRatio,
+        prefetchRetryMaxDelayMs,
+        prefetchTimeoutMs,
         priority,
         runtime,
+        speculationRules,
         staleWhileRevalidateMs
     ]);
     useEffect(() => {
@@ -64,22 +81,29 @@ export const Link = forwardRef(({ href, replace = false, scroll = true, scrollBe
         const element = anchorRef.current;
         if (!element || typeof IntersectionObserver === "undefined")
             return;
+        let cancelPendingPrefetch;
         const observer = new IntersectionObserver((entries) => {
             for (const entry of entries) {
                 if (!entry.isIntersecting)
                     continue;
-                schedulePrefetch(scoreViewportEntry(entry));
+                const score = scoreViewportEntry(entry);
+                cancelPendingPrefetch = scheduleViewportPrefetchAfterScroll(element, score, schedulePrefetch, viewportScrollDebounceMs, viewportScrollVelocityThreshold);
                 observer.unobserve(entry.target);
             }
         }, { rootMargin: "200px", threshold: [0, 0.25, 0.5, 0.75, 1] });
         observer.observe(element);
-        return () => observer.disconnect();
+        return () => {
+            cancelPendingPrefetch?.();
+            observer.disconnect();
+        };
     }, [
         behavior,
         hrefInfo.isExternal,
         hrefInfo.isHash,
         hrefInfo.isUnsafe,
-        schedulePrefetch
+        schedulePrefetch,
+        viewportScrollDebounceMs,
+        viewportScrollVelocityThreshold
     ]);
     useEffect(() => {
         if (behavior !== "idle")
@@ -112,6 +136,8 @@ export const Link = forwardRef(({ href, replace = false, scroll = true, scrollBe
             return;
         if (download)
             return;
+        if (reloadDocument)
+            return;
         event.preventDefault();
         if (onBeforeNavigate) {
             const result = await onBeforeNavigate(hrefInfo.href);
@@ -123,13 +149,14 @@ export const Link = forwardRef(({ href, replace = false, scroll = true, scrollBe
                 router,
                 replace,
                 state,
-                scroll,
+                scroll: preventScrollReset ? false : scroll,
                 scrollBehavior,
                 hashOffset,
                 viewTransition,
                 focus,
                 announce,
-                fallbackHref
+                fallbackHref,
+                guards: beforeNavigate
             });
             onNavigate?.(hrefInfo.href);
         }
@@ -146,11 +173,14 @@ export const Link = forwardRef(({ href, replace = false, scroll = true, scrollBe
         hrefInfo.isExternal,
         hrefInfo.isHash,
         hrefInfo.isUnsafe,
+        beforeNavigate,
         onBeforeNavigate,
         onClick,
         onNavigate,
         onNavigateError,
+        preventScrollReset,
         replace,
+        reloadDocument,
         router,
         runtime,
         scroll,
@@ -159,6 +189,20 @@ export const Link = forwardRef(({ href, replace = false, scroll = true, scrollBe
         target,
         viewTransition
     ]);
+    const handlePointerDown = useCallback((event) => {
+        onPointerDown?.(event);
+        if (event.defaultPrevented || behavior === "none")
+            return;
+        if (event.button !== 0)
+            return;
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
+            return;
+        if (target && target !== "_self")
+            return;
+        if (download)
+            return;
+        schedulePrefetch(undefined, "high");
+    }, [behavior, download, onPointerDown, schedulePrefetch, target]);
     const handlePointerEnter = useCallback((event) => {
         onPointerEnter?.(event);
         if (event.defaultPrevented || behavior !== "hover")
@@ -192,7 +236,7 @@ export const Link = forwardRef(({ href, replace = false, scroll = true, scrollBe
         return (_jsx("span", { role: "link", "aria-disabled": "true", tabIndex: -1, ...rest, children: children }));
     }
     const downloadAttr = download === true ? "" : download || undefined;
-    return (_jsx("a", { ...rest, ref: setRef, href: hrefInfo.safeHref, target: target, rel: computedRel, download: downloadAttr, onClick: navigate, onPointerEnter: handlePointerEnter, onPointerLeave: handlePointerLeave, onMouseEnter: handleMouseEnter, onFocus: handleFocus, children: children }));
+    return (_jsx("a", { ...rest, ref: setRef, href: hrefInfo.safeHref, target: target, rel: computedRel, download: downloadAttr, onClick: navigate, onPointerDown: handlePointerDown, onPointerEnter: handlePointerEnter, onPointerLeave: handlePointerLeave, onMouseEnter: handleMouseEnter, onFocus: handleFocus, children: children }));
 });
 Link.displayName = "Link";
 export function SkipNavigation({ targetId = "main-content", children = "Skip to content", onClick, ...props }) {
@@ -222,11 +266,70 @@ function priorityForBehavior(behavior) {
         return "medium";
     return "low";
 }
+function normalizePrefetchBehavior(behavior) {
+    if (behavior === false || behavior === "none")
+        return "none";
+    if (behavior === "viewport" || behavior === "idle")
+        return behavior;
+    return "hover";
+}
 function scoreViewportEntry(entry) {
     const viewportHeight = window.innerHeight || 1;
     const distanceFromTop = Math.max(0, entry.boundingClientRect.top);
     const topScore = 1 - Math.min(1, distanceFromTop / viewportHeight);
     return entry.intersectionRatio * 100 + topScore;
+}
+function scheduleViewportPrefetchAfterScroll(element, viewportScore, callback, debounceMs, velocityThreshold) {
+    let cancelled = false;
+    let timeout;
+    const run = () => {
+        if (cancelled)
+            return;
+        if (isScrollingQuickly(velocityThreshold)) {
+            timeout = window.setTimeout(run, debounceMs);
+            return;
+        }
+        if (isNearViewport(element))
+            callback(viewportScore);
+    };
+    timeout = window.setTimeout(run, isScrollingQuickly(velocityThreshold) ? debounceMs : 0);
+    return () => {
+        cancelled = true;
+        if (timeout !== undefined)
+            window.clearTimeout(timeout);
+    };
+}
+let scrollTrackerInstalled = false;
+let lastScrollY = 0;
+let lastScrollAt = 0;
+let lastScrollEventAt = 0;
+let scrollVelocity = 0;
+function isScrollingQuickly(velocityThreshold) {
+    installScrollTracker();
+    if (performance.now() - lastScrollEventAt > 140)
+        return false;
+    return scrollVelocity > velocityThreshold;
+}
+function installScrollTracker() {
+    if (scrollTrackerInstalled || typeof window === "undefined")
+        return;
+    scrollTrackerInstalled = true;
+    lastScrollY = window.scrollY;
+    lastScrollAt = performance.now();
+    window.addEventListener("scroll", () => {
+        const now = performance.now();
+        const elapsed = Math.max(1, now - lastScrollAt);
+        const nextY = window.scrollY;
+        scrollVelocity = Math.abs(nextY - lastScrollY) / elapsed;
+        lastScrollY = nextY;
+        lastScrollAt = now;
+        lastScrollEventAt = now;
+    }, { passive: true });
+}
+function isNearViewport(element, margin = 200) {
+    const rect = element.getBoundingClientRect();
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+    return rect.bottom >= -margin && rect.top <= viewportHeight + margin;
 }
 function mergeRel(rel, target, isExternal) {
     if (target !== "_blank" && !isExternal)

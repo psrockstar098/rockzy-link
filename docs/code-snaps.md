@@ -1,8 +1,8 @@
 # Code Snaps
 
-Copy-paste snippets for common integration points.
+Small copy-paste examples.
 
-## App Root
+## React App Root
 
 ```tsx
 import { createRoot } from "react-dom/client";
@@ -21,28 +21,29 @@ createRoot(document.getElementById("root")!).render(
 );
 ```
 
-## Protected Route Link
+## Basic Links
 
 ```tsx
-<Link
-  href="/account"
-  prefetch="none"
-  onBeforeNavigate={async () => {
-    const ok = await confirmSession();
-    return ok;
-  }}
->
-  Account
+<Link href="/dashboard">Dashboard</Link>
+<Link to="/settings">Settings</Link>
+<Link href="/docs" prefetch>Docs</Link>
+<Link href="/checkout" prefetch="none">Checkout</Link>
+```
+
+## React Router-Style Link
+
+```tsx
+<Link to="/inbox" preventScrollReset>
+  Inbox
 </Link>
 ```
 
-## Mutation Invalidation
+## Full Document Navigation
 
-```ts
-async function updateProfile(input: ProfileInput) {
-  await api.profile.update(input);
-  runtime.routeCache.invalidateMutation("/profile", ["profile", "user"]);
-}
+```tsx
+<Link href="/legacy-page" reloadDocument>
+  Legacy page
+</Link>
 ```
 
 ## Router Adapter
@@ -55,9 +56,7 @@ const router = {
       state: opts?.state
     });
   },
-  prefetch: (href: string) => {
-    return warmRoute(href);
-  }
+  prefetch: (href: string) => warmRoute(href)
 };
 
 <Link href="/settings" router={router}>
@@ -65,115 +64,95 @@ const router = {
 </Link>
 ```
 
-## Framework-Neutral Runtime
-
-```ts
-import { createLinkRuntime } from "rockzy-link/runtime";
-
-const runtime = createLinkRuntime();
-
-await runtime.navigate("/dashboard", {
-  viewTransition: true
-});
-```
-
-## Vanilla Smart Link
-
-```ts
-import { createLinkRuntime } from "rockzy-link/runtime";
-
-const runtime = createLinkRuntime();
-
-document.addEventListener("pointerenter", (event) => {
-  const link = (event.target as HTMLElement).closest<HTMLAnchorElement>(
-    "a[data-smart-link]"
-  );
-  if (!link) return;
-  runtime.prefetch(link.href, { priority: "high" });
-}, true);
-
-document.addEventListener("click", (event) => {
-  const link = (event.target as HTMLElement).closest<HTMLAnchorElement>(
-    "a[data-smart-link]"
-  );
-  if (!link) return;
-  event.preventDefault();
-  runtime.navigate(link.href, { viewTransition: true });
-});
-```
-
-## Vue Router Adapter
-
-```ts
-const routerAdapter = {
-  push: (href: string, opts?: { replace?: boolean }) => {
-    if (opts?.replace) return vueRouter.replace(href);
-    return vueRouter.push(href);
-  }
-};
-
-await runtime.navigate("/dashboard", {
-  router: routerAdapter
-});
-```
-
-## SvelteKit Adapter
-
-```ts
-import { goto, preloadData } from "$app/navigation";
-
-await runtime.navigate("/dashboard", {
-  router: {
-    push: (href) => goto(href, { noScroll: true }),
-    prefetch: (href) => preloadData(href)
-  }
-});
-```
-
-## Angular Adapter
+## Fast Runtime Navigation
 
 ```ts
 await runtime.navigate("/dashboard", {
-  router: {
-    push: (href, opts) =>
-      angularRouter.navigateByUrl(href, {
-        replaceUrl: opts?.replace
-      })
-  }
+  router,
+  scroll: false,
+  announce: false,
+  focus: false
 });
 ```
 
-## URL Object
+## Protected Route
 
 ```tsx
-const href = new URL("/reports?range=30d", window.location.origin);
-
-<Link href={href}>Reports</Link>
+<Link
+  href="/account"
+  prefetch="none"
+  beforeNavigate={async () => await confirmSession()}
+>
+  Account
+</Link>
 ```
 
-## Smart Sidebar
+## Global Guards
 
-```tsx
-function Sidebar() {
-  return (
-    <nav>
-      {items.map((item) => (
-        <Link
-          key={item.href}
-          href={item.href}
-          prefetch="hover"
-          estimateBytes={96_000}
-          cacheTags={item.tags}
-        >
-          {item.label}
-        </Link>
-      ))}
-    </nav>
-  );
+```ts
+const unregister = runtime.beforeNavigate([
+  async ({ href }) => confirmSession(href),
+  async ({ from, href }) => confirmUnsavedChanges({ from, href })
+]);
+```
+
+## Route Cache
+
+```ts
+runtime.routeCache.set("/api/projects", "api", projects, {
+  ttlMs: 60_000,
+  staleWhileRevalidateMs: 10_000,
+  tags: ["projects"]
+});
+
+const cached = runtime.routeCache.get<Project[]>("/api/projects", "api");
+```
+
+## Cache Presence
+
+```ts
+if (runtime.routeCache.has("/api/projects", "api")) {
+  // Present and not expired. This does not count as a read hit.
 }
 ```
 
-Pointer intent delays fast fly-by hover events, so a dense sidebar does not fire every route request when the cursor crosses it.
+## Mutation Invalidation
+
+```ts
+await api.projects.update(project);
+
+runtime.routeCache.invalidateMutation("/projects/" + project.id, [
+  "projects",
+  "project:" + project.id
+]);
+```
+
+## Asset Preload During Prefetch
+
+```tsx
+<Link
+  href="/reports"
+  prefetch="viewport"
+  preloadAssets={[
+    "/assets/reports.css",
+    { href: "/assets/reports.js", module: true }
+  ]}
+>
+  Reports
+</Link>
+```
+
+## Speculation Rules
+
+```tsx
+<Link
+  href="/docs"
+  prefetch="viewport"
+  speculationRules={{ action: "prefetch", eagerness: "moderate" }}
+>
+  Docs
+</Link>
+```
 
 ## Hash Offset
 
@@ -183,27 +162,42 @@ Pointer intent delays fast fly-by hover events, so a dense sidebar does not fire
 </Link>
 ```
 
-## Shared Element View Transition
+## Nested Scroll Restoration
+
+```tsx
+<aside data-scroll-restoration-id="sidebar" />
+```
+
+## Focus Target
+
+```tsx
+<main id="main-content">
+  <h1 data-route-focus>Dashboard</h1>
+</main>
+```
+
+## Skip Navigation
+
+```tsx
+import { SkipNavigation } from "rockzy-link";
+
+<SkipNavigation targetId="main-content" />
+```
+
+## View Transition
 
 ```tsx
 <Link href="/photos/42" viewTransition>
-  <img
-    src="/thumbs/42.jpg"
-    alt=""
-    style={{ viewTransitionName: "photo-42" }}
-  />
-  Open
+  Open photo
 </Link>
 ```
 
-Destination:
+## Browser Cache Prefetch
 
-```tsx
-<img
-  src="/photos/42.jpg"
-  alt="Photo 42"
-  style={{ viewTransitionName: "photo-42" }}
-/>
+```ts
+import { prefetchToBrowserCache } from "rockzy-link/cache/browser";
+
+await prefetchToBrowserCache("/docs/getting-started");
 ```
 
 ## Node Cache Adapter
@@ -215,19 +209,15 @@ const cache = await createNodeRouteCache({
   maxEntries: 2_000,
   maxBytes: 200_000_000
 });
-
-cache.set("/api/products", "api", products, {
-  ttlMs: 120_000,
-  tags: ["products"]
-});
 ```
 
-## Browser Cache Prefetch
+## URL Safety
 
 ```ts
-import { prefetchToBrowserCache } from "rockzy-link/cache/browser";
+import { classifyHref, sanitizeHref } from "rockzy-link/security";
 
-await prefetchToBrowserCache("/docs/getting-started");
+const info = classifyHref(userHref);
+const href = sanitizeHref(userHref);
 ```
 
 ## Offline Worker File
@@ -237,4 +227,31 @@ import { writeFileSync } from "node:fs";
 import { OFFLINE_NAVIGATION_SERVICE_WORKER } from "rockzy-link/service-worker";
 
 writeFileSync("public/sw.js", OFFLINE_NAVIGATION_SERVICE_WORKER);
+```
+
+## Vanilla Smart Link
+
+```ts
+import { createLinkRuntime } from "rockzy-link/runtime";
+
+const runtime = createLinkRuntime();
+
+document.addEventListener("click", (event) => {
+  const link = (event.target as HTMLElement).closest<HTMLAnchorElement>(
+    "a[data-smart-link]"
+  );
+  if (!link) return;
+
+  event.preventDefault();
+  runtime.navigate(link.href, { viewTransition: true });
+});
+```
+
+## Benchmark Commands
+
+```bash
+npm run benchmark:browser
+npm run benchmark:bundle-size
+npm run benchmark:memory
+npm run publish:check
 ```

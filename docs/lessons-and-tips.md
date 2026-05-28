@@ -1,23 +1,21 @@
-# Lessons, Tips, and Tricks
+# Lessons And Tips
 
-These are the operating rules behind the package.
+These are the practical rules.
 
-## 1. Prefetch Less, But Earlier
+## Prefetch Less, But Earlier
 
-A fast app does not prefetch everything. It prefetches the right thing at the right time.
+Do not prefetch everything.
 
 Use:
 
-- `hover` for strong intent.
-- `viewport` for likely intent.
-- `idle` for cheap background warming.
-- `none` for routes with sensitive data, heavy server work, or low click-through.
+- `hover` for strong intent
+- `viewport` for important visible links
+- `idle` for cheap background work
+- `none` for sensitive or expensive routes
 
-## 2. Sidebars Need Intent Delay
+## Sidebars Should Usually Use Hover
 
-Dense navigation can accidentally trigger dozens of hover events as a pointer crosses the UI. The pointer intent tracker delays fast fly-bys and only prefetches when movement looks intentional.
-
-For sidebars:
+Dense menus can trigger too many viewport prefetches.
 
 ```tsx
 <Link href="/customers" prefetch="hover" estimateBytes={96_000}>
@@ -25,68 +23,49 @@ For sidebars:
 </Link>
 ```
 
-## 3. Let One Layer Own The Budget
+## Pick One Budget Owner
 
-Do not let every framework link, query client, and custom prefetcher independently flood the network.
+Avoid three systems all prefetching the same page.
 
-Pick one budget owner:
+Good split:
 
-- this package for navigation intent and network scheduling
-- the framework for actual route state
-- your query/cache layer for data reuse
+- `rockzy-link` owns navigation intent and prefetch budget
+- your router owns route state
+- your query layer owns data freshness
 
-## 4. Expensive Routes Should Start As Hover
+## Tag Cache Entries
 
-Viewport prefetch is powerful, but can be wasteful for dashboards, account pages, and large RSC payloads.
+Good tags:
 
-Use:
-
-```tsx
-<Link href="/billing" prefetch="hover">
-  Billing
-</Link>
-```
-
-## 5. Disable Prefetch For Mutation Routes
-
-Routes that trigger permission checks, one-time tokens, or server-heavy dynamic work should not prefetch casually.
-
-```tsx
-<Link href="/checkout" prefetch="none">
-  Checkout
-</Link>
-```
-
-## 6. Cache Tags Should Match Product Concepts
-
-Prefer tags like:
-
-- `user:42`
-- `project:abc`
-- `billing`
+- `project:42`
+- `projects`
 - `settings`
+- `billing`
 
-Avoid tags like:
+Then mutation cleanup is simple:
 
-- `page`
-- `data`
-- `cache`
-
-Good tags make mutation invalidation obvious.
-
-## 7. Scroll Restoration Is A Feature, Not An Afterthought
-
-For every scrollable panel that matters, add an ID:
-
-```tsx
-<section data-scroll-restoration-id="inbox-list" />
+```ts
+runtime.routeCache.invalidateTags(["projects", "project:42"]);
 ```
 
-Back/forward navigation feels dramatically better when nested containers restore too.
+## Use A Fast Path For Plain Router Navigation
 
-## 8. View Transitions Must Respect Reduced Motion
+If you do not need scroll, focus, announcements, transitions, or snapshots:
 
-Animations improve perceived speed, but only if they are not forced. Keep `respectReducedMotion: true`.
+```ts
+runtime.navigate("/dashboard", {
+  router,
+  scroll: false,
+  announce: false,
+  focus: false
+});
+```
+
+That keeps runtime overhead tiny.
+
+## Respect Reduced Motion
+
+Keep this default:
 
 ```ts
 createLinkRuntime({
@@ -97,68 +76,41 @@ createLinkRuntime({
 });
 ```
 
-## 9. Announce Real Page Changes
-
-A route change should move focus and announce the new page. Add a stable target:
+## Add Focus Targets
 
 ```tsx
-<h1 data-route-focus>Invoices</h1>
+<h1 data-route-focus>Reports</h1>
 ```
 
-## 10. Offline Is Best Effort
+This makes keyboard and screen-reader navigation feel much better.
 
-Offline navigation is not magic. It works best when:
+## Offline Is Recovery, Not Magic
 
-- the destination shell is cacheable
-- critical data has fallbacks
-- mutations are queued separately
-- the UI clearly communicates stale or offline state
+Offline navigation works best when:
 
-## 11. Security Comes First
+- route shells are cacheable
+- stale data is clearly labeled
+- mutations have their own queue/conflict strategy
 
-Never render untrusted URLs directly into `href`.
+## Measure Before Tuning
 
-This package blocks unsafe protocols such as `javascript:` and falls back to `#`.
+Start with:
 
-```tsx
-<Link href={userProvidedHref}>Open</Link>
+```bash
+npm run benchmark:browser
+npm run benchmark:memory
 ```
 
-## 12. Measure Before Raising Budgets
-
-If pages feel slow, do not immediately increase concurrency.
-
-Check:
-
-- route payload size
-- duplicate prefetches
-- cache hit rate
-- server latency
-- whether viewport prefetch is too aggressive
-
-Then tune:
-
-```ts
-createLinkRuntime({
-  prefetch: {
-    concurrency: 3,
-    bandwidthBudgetBytesPerMinute: 2_000_000,
-    memoryBudgetBytes: 40_000_000
-  }
-});
-```
+Then adjust concurrency, payload sizes, or cache TTLs.
 
 ## Production Checklist
 
 - Unsafe URLs sanitize to `#`.
-- External URLs get `noopener noreferrer`.
-- Prefetch is disabled for sensitive routes.
-- Hover intent does not flood dense menus.
-- Viewport links are prioritized by visibility.
-- Back/forward restores window and nested scroll.
-- Route changes announce and restore focus.
-- Reduced-motion users do not get forced transitions.
-- Cache tags exist for every mutation domain.
-- Offline worker is registered only where supported.
-- `npm run typecheck`, `npm run build`, and `npm test` pass.
-
+- External links get `noopener noreferrer`.
+- Private routes use `prefetch="none"`.
+- Dense menus use `prefetch="hover"`.
+- Mutation data has cache tags.
+- Pages include `data-route-focus`.
+- Important scroll panels have `data-scroll-restoration-id`.
+- Reduced-motion users are respected.
+- `npm run publish:check` passes.

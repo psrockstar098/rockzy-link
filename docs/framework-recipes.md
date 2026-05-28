@@ -1,123 +1,49 @@
 # Framework Recipes
 
-The rule: let the framework own route state, and let this package own intent, safety, cache coordination, scroll, a11y, offline recovery, and budgeting.
+Simple rule:
 
-React apps can use:
-
-```ts
-import { Link } from "rockzy-link";
-```
-
-Other frameworks should use:
-
-```ts
-import { createLinkRuntime } from "rockzy-link/runtime";
-```
+- React-based apps can use `<Link>`.
+- Non-React framework code should use `createLinkRuntime()` from `rockzy-link/runtime`.
+- Your framework owns rendering and route matching.
+- `rockzy-link` owns safety, prefetch timing, cache coordination, scroll/focus, transitions, and offline recovery.
 
 ## Adapter Shape
 
-Every framework adapter eventually maps to this:
+Every router adapter looks like this:
 
 ```ts
 const router = {
   push: (href: string, opts?: { replace?: boolean; state?: unknown }) => {
-    // framework navigation here
+    // framework navigation
   },
   prefetch: (href: string) => {
-    // optional framework preload here
+    // optional framework preload
   }
 };
 ```
 
-Then:
+Then pass it to `Link` or `runtime.navigate()`.
 
-```ts
-runtime.prefetch("/docs", { priority: "high" });
-runtime.navigate("/docs", { router, viewTransition: true });
-```
-
-## Next.js App Router
-
-Next.js already has built-in link prefetching, a client-side Router Cache, and server cache/revalidation APIs. Use this package when you want stricter prefetch budgeting, cross-tab dedupe, custom client cache invalidation, offline queuing, or consistent accessibility/scroll behavior across multiple app surfaces.
-
-Client wrapper:
+## React SPA
 
 ```tsx
-"use client";
-
-import { useRouter } from "next/navigation";
-import {
-  Link,
-  LinkRuntimeProvider,
-  createLinkRuntime
-} from "rockzy-link";
-
-const runtime = createLinkRuntime({
-  prefetch: {
-    concurrency: 3,
-    bandwidthBudgetBytesPerMinute: 2_000_000
-  }
-});
-
-export function SmartNextLink(
-  props: Omit<React.ComponentProps<typeof Link>, "router">
-) {
-  const nextRouter = useRouter();
-
-  return (
-    <LinkRuntimeProvider runtime={runtime}>
-      <Link
-        {...props}
-        router={{
-          push: (href, opts) => {
-            if (opts?.replace) nextRouter.replace(href);
-            else nextRouter.push(href);
-          },
-          prefetch: (href) => nextRouter.prefetch(href)
-        }}
-      />
-    </LinkRuntimeProvider>
-  );
-}
-```
-
-Tips:
-
-- Keep the wrapper as a client component.
-- Let this runtime own the prefetch budget if the page has many links.
-- For expensive dynamic routes, prefer `prefetch="hover"` or `prefetch="none"`.
-- After mutations, call this package's client invalidation and use Next's own server revalidation APIs for server-side data.
-
-Official references:
-
-- https://nextjs.org/docs/app/guides/prefetching
-- https://nextjs.org/docs/app/building-your-application/routing/linking-and-navigating
-- https://nextjs.org/docs/app/building-your-application/caching
-
-## Next.js Pages Router
-
-```tsx
-import { useRouter } from "next/router";
 import { Link } from "rockzy-link";
 
-export function SmartPagesLink(
-  props: Omit<React.ComponentProps<typeof Link>, "router">
-) {
-  const router = useRouter();
+<Link href="/dashboard">Dashboard</Link>
+```
 
-  return (
-    <Link
-      {...props}
-      router={{
-        push: (href, opts) => {
-          if (opts?.replace) return router.replace(href, undefined, { scroll: false });
-          return router.push(href, undefined, { scroll: false });
-        },
-        prefetch: (href) => router.prefetch(href)
-      }}
-    />
-  );
-}
+With your own router:
+
+```tsx
+<Link
+  href="/dashboard"
+  router={{
+    push: (href) => navigate(href),
+    prefetch: (href) => preloadRoute(href)
+  }}
+>
+  Dashboard
+</Link>
 ```
 
 ## React Router
@@ -127,7 +53,9 @@ import { useNavigate } from "react-router";
 import { Link } from "rockzy-link";
 
 export function SmartReactRouterLink(
-  props: Omit<React.ComponentProps<typeof Link>, "router">
+  props: Omit<React.ComponentProps<typeof Link>, "router" | "href"> & {
+    to: React.ComponentProps<typeof Link>["to"];
+  }
 ) {
   const navigate = useNavigate();
 
@@ -146,27 +74,71 @@ export function SmartReactRouterLink(
 }
 ```
 
-With a query client:
+Use:
 
 ```tsx
-<Link
-  href="/projects"
-  router={{
-    push: (href) => navigate(href),
-    prefetch: () => queryClient.prefetchQuery(projectsQueryOptions)
-  }}
->
-  Projects
-</Link>
+<SmartReactRouterLink to="/inbox" preventScrollReset>
+  Inbox
+</SmartReactRouterLink>
 ```
 
-Official reference:
+## Next.js App Router
 
-- https://reactrouter.com/start/framework/navigating
+```tsx
+"use client";
+
+import { useRouter } from "next/navigation";
+import { Link } from "rockzy-link";
+
+export function SmartNextLink(
+  props: Omit<React.ComponentProps<typeof Link>, "router">
+) {
+  const router = useRouter();
+
+  return (
+    <Link
+      {...props}
+      router={{
+        push: (href, opts) => {
+          if (opts?.replace) router.replace(href);
+          else router.push(href);
+        },
+        prefetch: (href) => router.prefetch(href)
+      }}
+    />
+  );
+}
+```
+
+Use this when you want stricter prefetch budgets, cross-tab dedupe, custom client cache invalidation, offline recovery, or consistent scroll/a11y behavior.
+
+## Next.js Pages Router
+
+```tsx
+import { useRouter } from "next/router";
+import { Link } from "rockzy-link";
+
+export function SmartPagesLink(
+  props: Omit<React.ComponentProps<typeof Link>, "router">
+) {
+  const router = useRouter();
+
+  return (
+    <Link
+      {...props}
+      router={{
+        push: (href, opts) => {
+          if (opts?.replace) return router.replace(href);
+          return router.push(href);
+        },
+        prefetch: (href) => router.prefetch(href)
+      }}
+    />
+  );
+}
+```
 
 ## TanStack Router
-
-TanStack Router supports route preloading. This package can coordinate user intent and budgets, then delegate actual route loading to TanStack.
 
 ```tsx
 import { useRouter } from "@tanstack/react-router";
@@ -200,14 +172,7 @@ export function SmartTanStackLink({
 }
 ```
 
-Official references:
-
-- https://tanstack.com/router/latest/docs/guide/preloading
-- https://tanstack.com/router/v1/docs/guide/navigation
-
 ## Remix
-
-Remix has its own `<Link>` prefetch modes. Use this package for guarded links, shared component libraries, offline queues, route announcements, view transitions, and stricter prefetch budgeting.
 
 ```tsx
 import { useNavigate } from "@remix-run/react";
@@ -233,64 +198,40 @@ export function SmartRemixLink(
 }
 ```
 
-Official reference:
-
-- https://v2.remix.run/docs/components/link
-
 ## Vue 3 + Vue Router
 
 Use the runtime subpath so Vue does not import React.
 
-`src/navigation/runtime.ts`:
-
 ```ts
 import { createLinkRuntime } from "rockzy-link/runtime";
 
-export const runtime = createLinkRuntime({
-  prefetch: {
-    concurrency: 4,
-    crossTabDedupe: true
-  }
-});
+export const runtime = createLinkRuntime();
 ```
-
-`SmartLink.vue`:
 
 ```vue
 <script setup lang="ts">
-import { computed } from "vue";
 import { useRouter } from "vue-router";
-import { runtime } from "./navigation/runtime";
+import { runtime } from "./runtime";
 
 const props = defineProps<{
   to: string;
   replace?: boolean;
-  prefetch?: "hover" | "viewport" | "idle" | "none";
 }>();
 
 const router = useRouter();
-const href = computed(() => props.to);
-
-function priority() {
-  if (props.prefetch === "viewport") return "medium";
-  if (props.prefetch === "idle") return "low";
-  return "high";
-}
 
 function warm() {
-  if (props.prefetch === "none") return;
-  runtime.prefetch(href.value, { priority: priority() });
+  runtime.prefetch(props.to, { priority: "high" });
 }
 
 async function go(event: MouseEvent) {
-  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
   event.preventDefault();
 
-  await runtime.navigate(href.value, {
+  await runtime.navigate(props.to, {
     router: {
-      push: (url) => {
-        if (props.replace) return router.replace(url);
-        return router.push(url);
+      push: (href) => {
+        if (props.replace) return router.replace(href);
+        return router.push(href);
       }
     },
     viewTransition: true
@@ -299,21 +240,13 @@ async function go(event: MouseEvent) {
 </script>
 
 <template>
-  <a :href="href" @mouseenter="warm" @focus="warm" @click="go">
+  <a :href="to" @mouseenter="warm" @focus="warm" @click="go">
     <slot />
   </a>
 </template>
 ```
 
-Official reference:
-
-- https://router.vuejs.org/guide/essentials/navigation.html
-
 ## Nuxt
-
-Nuxt already prefetches linked routes through `<NuxtLink>` and exposes utilities such as `navigateTo()` and `preloadRouteComponents()`. Use this package when you need a single global budget, pointer-intent delays, cache tagging, or cross-tab dedupe.
-
-`plugins/production-link.client.ts`:
 
 ```ts
 import { createLinkRuntime } from "rockzy-link/runtime";
@@ -334,8 +267,6 @@ export default defineNuxtPlugin(() => {
 });
 ```
 
-Component:
-
 ```vue
 <script setup lang="ts">
 const props = defineProps<{ to: string }>();
@@ -355,8 +286,7 @@ async function go(event: MouseEvent) {
   await $productionLink.navigate(props.to, {
     router: {
       push: (href) => navigateTo(href)
-    },
-    viewTransition: true
+    }
   });
 }
 </script>
@@ -368,17 +298,7 @@ async function go(event: MouseEvent) {
 </template>
 ```
 
-Official references:
-
-- https://nuxt.com/docs/3.x/api/components/nuxt-link
-- https://nuxt.com/docs/3.x/api/utils/preload-route-components
-- https://nuxt.com/docs/4.x/api/utils/navigate-to
-
 ## SvelteKit
-
-SvelteKit has `goto()`, `preloadData()`, and link-level preload attributes. Use the runtime when you want more control over budgets, retries, and cross-tab dedupe.
-
-`src/lib/navigation.ts`:
 
 ```ts
 import { createLinkRuntime } from "rockzy-link/runtime";
@@ -386,15 +306,12 @@ import { createLinkRuntime } from "rockzy-link/runtime";
 export const runtime = createLinkRuntime();
 ```
 
-`SmartLink.svelte`:
-
 ```svelte
 <script lang="ts">
   import { goto, preloadData } from "$app/navigation";
-  import { runtime } from "$lib/navigation";
+  import { runtime } from "$lib/runtime";
 
   export let href: string;
-  export let replace = false;
 
   function warm() {
     runtime.prefetch(href, {
@@ -406,14 +323,11 @@ export const runtime = createLinkRuntime();
   }
 
   async function go(event: MouseEvent) {
-    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
-
     await runtime.navigate(href, {
       router: {
-        push: (url) => goto(url, { replaceState: replace, noScroll: true })
-      },
-      viewTransition: true
+        push: (url) => goto(url, { noScroll: true })
+      }
     });
   }
 </script>
@@ -423,28 +337,18 @@ export const runtime = createLinkRuntime();
 </a>
 ```
 
-Official reference:
-
-- https://svelte.dev/docs/kit/$app-navigation
-
 ## Angular
-
-Use an Angular directive and the runtime subpath. Angular Router owns actual route state; the runtime schedules and coordinates.
-
-`production-link.runtime.ts`:
 
 ```ts
 import { createLinkRuntime } from "rockzy-link/runtime";
 
-export const productionLinkRuntime = createLinkRuntime();
+export const runtime = createLinkRuntime();
 ```
-
-Directive:
 
 ```ts
 import { Directive, HostListener, Input } from "@angular/core";
 import { Router } from "@angular/router";
-import { productionLinkRuntime } from "./production-link.runtime";
+import { runtime } from "./runtime";
 
 @Directive({
   selector: "a[productionLink]",
@@ -459,41 +363,32 @@ export class ProductionLinkDirective {
   @HostListener("mouseenter")
   @HostListener("focus")
   warm() {
-    productionLinkRuntime.prefetch(this.href, { priority: "high" });
+    runtime.prefetch(this.href, { priority: "high" });
   }
 
   @HostListener("click", ["$event"])
   async click(event: MouseEvent) {
-    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
 
-    await productionLinkRuntime.navigate(this.href, {
+    await runtime.navigate(this.href, {
       router: {
         push: (href) =>
           this.router.navigateByUrl(href, {
             replaceUrl: this.replace
           })
-      },
-      viewTransition: true
+      }
     });
   }
 }
 ```
 
-Template:
+Use:
 
 ```html
 <a productionLink="/dashboard">Dashboard</a>
 ```
 
-Official references:
-
-- https://angular.dev/guide/routing
-- https://angular.dev/api/router/Router
-
 ## Solid Router
-
-Solid Router supports route preloading. Use this runtime when you need global budget control and cross-tab dedupe around that preloading.
 
 ```tsx
 import { useNavigate } from "@solidjs/router";
@@ -501,44 +396,32 @@ import { createLinkRuntime } from "rockzy-link/runtime";
 
 const runtime = createLinkRuntime();
 
-export function SmartSolidLink(props: {
-  href: string;
-  children: any;
-}) {
+export function SmartSolidLink(props: { href: string; children: any }) {
   const navigate = useNavigate();
 
-  const warm = () => {
-    runtime.prefetch(props.href, { priority: "high" });
-  };
-
-  const go = async (event: MouseEvent) => {
-    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-    event.preventDefault();
-
-    await runtime.navigate(props.href, {
-      router: {
-        push: (href) => navigate(href)
-      },
-      viewTransition: true
-    });
-  };
-
   return (
-    <a href={props.href} onMouseEnter={warm} onFocus={warm} onClick={go}>
+    <a
+      href={props.href}
+      onMouseEnter={() => runtime.prefetch(props.href, { priority: "high" })}
+      onFocus={() => runtime.prefetch(props.href, { priority: "high" })}
+      onClick={(event) => {
+        event.preventDefault();
+        runtime.navigate(props.href, {
+          router: {
+            push: (href) => navigate(href)
+          }
+        });
+      }}
+    >
       {props.children}
     </a>
   );
 }
 ```
 
-Official references:
-
-- https://docs.solidjs.com/solid-router/advanced-concepts/preloading
-- https://docs.solidjs.com/solid-router/reference/preload-functions/preload
-
 ## Qwik City
 
-Qwik City has its own `<Link>` and `useNavigate()`. Use this runtime carefully: Qwik optimizes around resumability, so do not turn every link into eager JavaScript. Good uses are high-value dashboards, authenticated apps, and custom menu systems.
+Use carefully. Qwik optimizes for resumability, so do this only for high-value links.
 
 ```tsx
 import { component$ } from "@builder.io/qwik";
@@ -569,14 +452,7 @@ export const SmartQwikLink = component$((props: { href: string }) => {
 });
 ```
 
-Official references:
-
-- https://qwik.dev/docs/routing/
-- https://qwik.dev/docs/api/
-
 ## Astro
-
-Astro can use normal links, built-in prefetch behavior, and view transitions. Use this runtime in a React island or a small client script when you need budgeted navigation.
 
 React island:
 
@@ -584,20 +460,13 @@ React island:
 import { Link } from "rockzy-link";
 
 export function NavIsland() {
-  return (
-    <Link href="/docs" prefetch="viewport" viewTransition>
-      Docs
-    </Link>
-  );
+  return <Link href="/docs" prefetch="viewport">Docs</Link>;
 }
 ```
 
-Framework-neutral client script:
+Plain script:
 
 ```astro
----
----
-
 <a href="/docs" data-smart-link>Docs</a>
 
 <script>
@@ -605,55 +474,18 @@ Framework-neutral client script:
 
   const runtime = createLinkRuntime();
 
-  for (const link of document.querySelectorAll("[data-smart-link]")) {
-    const href = link.getAttribute("href");
-    if (!href) continue;
-
-    link.addEventListener("mouseenter", () => {
-      runtime.prefetch(href, { priority: "high" });
-    });
-
-    link.addEventListener("click", (event) => {
-      event.preventDefault();
-      runtime.navigate(href, { viewTransition: true });
-    });
-  }
-</script>
-```
-
-Official reference:
-
-- https://docs.astro.build/en/guides/view-transitions/
-
-## Vite SPA or Vanilla JavaScript
-
-No router is required. The runtime falls back to the History API and dispatches route events.
-
-```ts
-import { createLinkRuntime } from "rockzy-link/runtime";
-
-const runtime = createLinkRuntime();
-
-document.addEventListener("click", async (event) => {
-  const target = event.target as HTMLElement;
-  const anchor = target.closest<HTMLAnchorElement>("a[data-route]");
-  if (!anchor) return;
-
-  event.preventDefault();
-  await runtime.navigate(anchor.href, {
-    viewTransition: true
+  document.addEventListener("click", (event) => {
+    const link = event.target.closest("[data-smart-link]");
+    if (!link) return;
+    event.preventDefault();
+    runtime.navigate(link.href, { viewTransition: true });
   });
-});
-
-window.addEventListener("production-link:navigate", (event) => {
-  const href = (event as CustomEvent).detail.href;
-  renderRoute(href);
-});
+</script>
 ```
 
 ## htmx
 
-For htmx, keep htmx in charge of swaps. Use this runtime for URL safety and cache warming only.
+Keep htmx in charge of swaps. Use this package for safety and prefetching.
 
 ```html
 <a href="/inbox" hx-get="/inbox" hx-target="#main" data-smart-prefetch>
@@ -673,21 +505,21 @@ For htmx, keep htmx in charge of swaps. Use this runtime for URL safety and cach
 </script>
 ```
 
-## Framework Selection Guide
+## Framework Selection
 
-| Framework | Use React `<Link>`? | Preferred import | Navigation owner |
-| --- | --- | --- | --- |
-| React SPA | Yes | root package | Runtime or app router |
-| Next.js | Yes, client wrapper | root package | Next router |
-| Remix | Yes | root package | Remix router |
-| React Router | Yes | root package | React Router |
-| TanStack Router | Yes | root package | TanStack Router |
-| Vue | No | `/runtime` | Vue Router |
-| Nuxt | No | `/runtime` | Nuxt |
-| SvelteKit | No | `/runtime` | SvelteKit |
-| Angular | No | `/runtime` | Angular Router |
-| Solid | Usually no | `/runtime` | Solid Router |
-| Qwik | No | `/runtime` | Qwik City |
-| Astro | Island optional | root or `/runtime` | Astro or runtime |
-| Vanilla | No | `/runtime` | Runtime History API |
-
+| Framework | Preferred Import | Navigation Owner |
+| --- | --- | --- |
+| React SPA | `rockzy-link` | App router or runtime |
+| React Router | `rockzy-link` | React Router |
+| Next.js | `rockzy-link` | Next router |
+| Remix | `rockzy-link` | Remix router |
+| TanStack Router | `rockzy-link` | TanStack Router |
+| Vue | `rockzy-link/runtime` | Vue Router |
+| Nuxt | `rockzy-link/runtime` | Nuxt |
+| SvelteKit | `rockzy-link/runtime` | SvelteKit |
+| Angular | `rockzy-link/runtime` | Angular Router |
+| Solid | `rockzy-link/runtime` | Solid Router |
+| Qwik | `rockzy-link/runtime` | Qwik City |
+| Astro | root or runtime | Astro/runtime |
+| htmx | `rockzy-link/runtime` | htmx |
+| Vanilla | `rockzy-link/runtime` | Runtime History API |

@@ -12,8 +12,12 @@ export async function matchBrowserCache(
   options: BrowserCacheOptions = {}
 ): Promise<Response | undefined> {
   if (!canUseCacheStorage()) return undefined;
-  const cache = await caches.open(options.cacheName ?? DEFAULT_BROWSER_CACHE);
-  return cache.match(href);
+  try {
+    const cache = await caches.open(options.cacheName ?? DEFAULT_BROWSER_CACHE);
+    return await cache.match(href);
+  } catch {
+    return undefined;
+  }
 }
 
 export async function putBrowserCache(
@@ -23,8 +27,12 @@ export async function putBrowserCache(
 ): Promise<void> {
   if (!canUseCacheStorage()) return;
   if (!response.ok && response.type !== "opaque") return;
-  const cache = await caches.open(options.cacheName ?? DEFAULT_BROWSER_CACHE);
-  await cache.put(href, response.clone());
+  try {
+    const cache = await caches.open(options.cacheName ?? DEFAULT_BROWSER_CACHE);
+    await cache.put(href, response.clone());
+  } catch {
+    // Ignore cache storage errors (e.g. QuotaExceededError or security restrictions in private mode)
+  }
 }
 
 export async function prefetchToBrowserCache(

@@ -1,5 +1,5 @@
 import { isBrowser, prefersReducedMotion } from "../environment.js";
-export async function runWithViewTransition(callback, config = {}) {
+export function runWithViewTransition(callback, config = {}) {
     const enabled = config.enabled ?? true;
     const respectReducedMotion = config.respectReducedMotion ?? true;
     const startViewTransition = isBrowser()
@@ -8,10 +8,9 @@ export async function runWithViewTransition(callback, config = {}) {
     if (!enabled ||
         !startViewTransition ||
         (respectReducedMotion && prefersReducedMotion())) {
-        await callback();
-        return;
+        return callback();
     }
     const transition = startViewTransition(callback);
-    await transition.updateCallbackDone;
+    return transition.updateCallbackDone;
 }
 //# sourceMappingURL=view-transitions.js.map

@@ -1,24 +1,8 @@
 # Developer Guide
 
-This package gives you a production-grade navigation primitive, not just a prettier `<a>`.
+This guide keeps the setup simple first, then shows the knobs when you need them.
 
-It has two layers:
-
-- `rockzy-link`: React component and public utilities.
-- `rockzy-link/runtime`: framework-neutral runtime for Vue, Nuxt, SvelteKit, Angular, Solid, Qwik, Astro, and vanilla JavaScript.
-
-Use it when you want route navigation to coordinate:
-
-- safe URL parsing
-- smart prefetch
-- route cache
-- scroll restoration
-- view transitions
-- accessibility announcements
-- offline fallback
-- back/forward snapshots
-
-## Basic Setup
+## 1. Start Small
 
 ```tsx
 import {
@@ -27,303 +11,162 @@ import {
   createLinkRuntime
 } from "rockzy-link";
 
-const runtime = createLinkRuntime({
-  prefetch: {
-    concurrency: 4,
-    bandwidthBudgetBytesPerMinute: 3_000_000,
-    memoryBudgetBytes: 30_000_000
-  },
-  offline: {
-    enabled: true,
-    optimistic: true
-  },
-  a11y: {
-    announce: true,
-    restoreFocus: true
-  },
-  viewTransition: {
-    enabled: true,
-    respectReducedMotion: true
-  }
-});
+const runtime = createLinkRuntime();
 
 export function App() {
   return (
     <LinkRuntimeProvider runtime={runtime}>
-      <Link href="/dashboard" prefetch="viewport">
-        Dashboard
-      </Link>
+      <Link href="/dashboard">Dashboard</Link>
     </LinkRuntimeProvider>
   );
 }
 ```
 
-For non-React frameworks:
+That gives you safe URL handling, hover prefetch, scroll handling, and accessibility defaults.
 
-```ts
-import { createLinkRuntime } from "rockzy-link/runtime";
-
-export const runtime = createLinkRuntime();
-```
-
-Then connect your framework router:
-
-```ts
-await runtime.navigate("/dashboard", {
-  router: {
-    push: (href) => frameworkRouter.push(href),
-    prefetch: (href) => frameworkRouter.prefetch?.(href)
-  }
-});
-```
-
-## How The Runtime Works
-
-Navigation has two paths: prefetch and click.
-
-Prefetch path:
-
-1. A link receives hover, focus, viewport, or idle intent.
-2. The URL is classified and unsafe URLs are rejected.
-3. The task enters the scheduler with `high`, `medium`, or `low` priority.
-4. The scheduler checks concurrency, bandwidth, device, save-data, visibility, and memory budgets.
-5. The scheduler deduplicates same-route work in the current tab and across tabs.
-6. The fetcher warms browser cache, framework preload APIs, route cache, or any custom cache you provide.
-
-Click path:
-
-1. The runtime saves scroll and navigation snapshots for the current route.
-2. It runs `onBeforeNavigate` or your own guard if you use one.
-3. It delegates to your router adapter, or falls back to `history.pushState()`.
-4. It runs view transitions when supported.
-5. It restores scroll or hash position.
-6. It announces the route change and restores focus.
-7. If offline mode is enabled, failed/offline navigations can queue for later replay.
-
-## Choosing The Right Import
-
-React:
-
-```tsx
-import { Link } from "rockzy-link";
-```
-
-Any other framework:
-
-```ts
-import { createLinkRuntime } from "rockzy-link/runtime";
-```
-
-Cache-only usage:
-
-```ts
-import { RouteCache } from "rockzy-link/cache";
-```
-
-Security-only usage:
-
-```ts
-import { sanitizeHref } from "rockzy-link/security";
-```
-
-## Prefetch Modes
+## 2. Pick A Prefetch Mode
 
 ```tsx
 <Link href="/pricing" prefetch="hover">Pricing</Link>
 <Link href="/dashboard" prefetch="viewport">Dashboard</Link>
 <Link href="/legal" prefetch="idle">Legal</Link>
-<Link href="/billing" prefetch="none">Billing</Link>
+<Link href="/checkout" prefetch="none">Checkout</Link>
 ```
 
-Use this mapping:
+| Mode | Use When |
+| --- | --- |
+| `hover` | The route is useful, but you only want strong user intent |
+| `viewport` | The link is important and visible on the page |
+| `idle` | The route is cheap and can warm in the background |
+| `none` | The route is private, expensive, or mutation-sensitive |
 
-- `hover`: highest priority, best for likely user intent.
-- `viewport`: medium priority, best for menus and primary content links.
-- `idle`: low priority, best for cheap pages that improve later navigation.
-- `none`: disable prefetch for expensive, private, or mutation-sensitive routes.
-
-Priority can be overridden:
+## 3. Connect A Router
 
 ```tsx
-<Link href="/admin" prefetch="viewport" prefetchPriority="low">
-  Admin
+const router = {
+  push: (href: string, opts?: { replace?: boolean; state?: unknown }) => {
+    if (opts?.replace) return appRouter.replace(href);
+    return appRouter.push(href);
+  },
+  prefetch: (href: string) => appRouter.prefetch?.(href)
+};
+
+<Link href="/settings" router={router}>
+  Settings
 </Link>
 ```
 
-Manual prefetch:
-
-```ts
-runtime.prefetch("/reports", {
-  priority: "medium",
-  estimateBytes: 180_000,
-  tags: ["reports"],
-  ttlMs: 120_000
-});
-```
-
-## Route Cache
-
-```ts
-runtime.routeCache.set("/api/user/42", "api", user, {
-  ttlMs: 60_000,
-  staleWhileRevalidateMs: 15_000,
-  tags: ["user:42"]
-});
-
-const cached = runtime.routeCache.get("/api/user/42", "api");
-```
-
-Invalidate after mutations:
-
-```ts
-runtime.routeCache.invalidateMutation("/settings", ["settings", "user:42"]);
-```
-
-Cache kinds:
-
-- `route-data`
-- `rsc`
-- `loader`
-- `api`
-- `html`
-- `script`
-- `image`
-- `font`
-
-Use route cache for client-side reuse and invalidation. Do not pretend it replaces your framework's server cache. In Next, Nuxt, Remix, SvelteKit, or Angular SSR apps, keep server cache invalidation in the framework and use this cache for client-side warm data and navigation metadata.
-
-## Scroll Restoration
-
-Window scroll is automatic. For nested containers:
-
-```tsx
-<aside data-scroll-restoration-id="sidebar" />
-```
-
-Or register manually:
-
-```tsx
-useEffect(() => {
-  if (!ref.current) return;
-  return runtime.scroll.registerContainer("sidebar", ref.current);
-}, [runtime]);
-```
-
-Hash anchor offsets use CSS:
-
-```css
-:root {
-  --route-scroll-offset: 72px;
-}
-```
-
-## View Transitions
-
-```tsx
-<Link href="/reports" viewTransition>
-  Reports
-</Link>
-```
-
-The runtime uses `document.startViewTransition()` when available and falls back to normal navigation when unsupported. Reduced-motion users are respected by default.
-
-## Accessibility
-
-Route changes announce through a hidden live region and focus moves to:
-
-1. `[data-route-focus]`
-2. `main h1`
-3. `h1`
-4. `main`
-5. `[role="main"]`
-
-Example:
-
-```tsx
-<main id="main-content">
-  <h1 data-route-focus>Dashboard</h1>
-</main>
-```
-
-Skip navigation:
-
-```tsx
-import { SkipNavigation } from "rockzy-link";
-
-<SkipNavigation className="skip-link" targetId="main-content" />
-```
-
-## Offline Navigation
-
-Register a service worker:
-
-```ts
-runtime.offline.register("/sw.js");
-```
-
-Expose the packaged worker script from your app:
-
-```ts
-import { OFFLINE_NAVIGATION_SERVICE_WORKER } from "rockzy-link/service-worker";
-```
-
-When offline, navigations can be queued and replayed after the browser comes back online.
-
-Offline works best when your route shell is cacheable. Treat queued navigation as a UX recovery feature, not a replacement for real conflict handling around offline mutations.
-
-## Non-React Click Handler
+For non-React frameworks, use the runtime directly:
 
 ```ts
 import { createLinkRuntime } from "rockzy-link/runtime";
 
 const runtime = createLinkRuntime();
 
-document.addEventListener("click", async (event) => {
-  const target = event.target as HTMLElement;
-  const link = target.closest<HTMLAnchorElement>("a[data-smart-link]");
-  if (!link) return;
-
-  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-  event.preventDefault();
-
-  await runtime.navigate(link.href, {
-    viewTransition: true
-  });
+await runtime.navigate("/settings", {
+  router,
+  scroll: false,
+  announce: false,
+  focus: false
 });
 ```
 
-## Common Mistakes
-
-- Importing the React component in Vue, Svelte, Angular, or Qwik. Use `rockzy-link/runtime` instead.
-- Letting multiple systems prefetch the same route independently. Pick one budget owner.
-- Using viewport prefetch for every sidebar item. Use hover intent for dense navigation.
-- Caching mutation-sensitive pages without tags. Always tag cache entries that a mutation can invalidate.
-- Forcing view transitions for reduced-motion users. Keep `respectReducedMotion: true`.
-- Ignoring nested scroll containers. Add `data-scroll-restoration-id` for panels, sidebars, inboxes, and tables.
-
-## Performance & Offline Safety Details
-
-### O(N) Snapshot Eviction
-To maintain maximum performance under memory limits, the snapshot eviction algorithms in `ScrollRestorationManager` and `NavigationSnapshotCache` use a highly efficient, single-pass linear O(N) scan. This avoids the garbage collection overhead and O(N log N) sorting associated with array clones, ensuring a zero-lag experience even with a large number of saved scroll views and DOM trees.
-
-### Sequential Queue Flushing
-When connection transitions from offline to online, the `OfflineNavigationManager` sequentially flushes the offline queue using `await` on each transition. This guarantees that queued events are retried strictly in order and prevents concurrent write race conditions on LocalStorage.
-
-## Production Defaults
-
-Good starting point:
+## 4. Cache Data With Tags
 
 ```ts
-createLinkRuntime({
+runtime.routeCache.set("/api/projects", "api", projects, {
+  ttlMs: 60_000,
+  staleWhileRevalidateMs: 10_000,
+  tags: ["projects"]
+});
+
+const cached = runtime.routeCache.get<Project[]>("/api/projects", "api");
+```
+
+After a mutation:
+
+```ts
+runtime.routeCache.invalidateTag("projects");
+```
+
+Use tags that match product concepts:
+
+- `project:42`
+- `projects`
+- `user:me`
+- `billing`
+
+## 5. Restore Scroll And Focus
+
+Nested scroll area:
+
+```tsx
+<section data-scroll-restoration-id="inbox-list" />
+```
+
+Focus target after navigation:
+
+```tsx
+<h1 data-route-focus>Inbox</h1>
+```
+
+Disable scroll reset for a link:
+
+```tsx
+<Link to="/inbox" preventScrollReset>
+  Inbox
+</Link>
+```
+
+## 6. Add View Transitions
+
+```tsx
+<Link href="/photos/42" viewTransition>
+  Open
+</Link>
+```
+
+The runtime falls back to normal navigation when the browser does not support View Transitions.
+
+## 7. Add Guards
+
+```ts
+runtime.beforeNavigate([
+  async ({ href }) => confirmSession(href),
+  async ({ from, href }) => confirmUnsavedChanges({ from, href })
+]);
+```
+
+Return `false` to block navigation.
+
+## 8. Add Offline Recovery
+
+```ts
+const runtime = createLinkRuntime({
+  offline: {
+    enabled: true,
+    optimistic: true
+  }
+});
+
+runtime.offline.register("/sw.js");
+```
+
+Offline navigation is best effort. It helps route shells recover, but your app still needs real offline data and mutation handling.
+
+## 9. Tune Production Defaults
+
+```ts
+const runtime = createLinkRuntime({
   prefetch: {
     concurrency: 4,
     bandwidthBudgetBytesPerMinute: 2_500_000,
     memoryBudgetBytes: 50_000_000,
-    crossTabDedupe: true
-  },
-  offline: {
-    enabled: true,
-    optimistic: true
+    crossTabDedupe: true,
+    adaptive: {
+      lowBatteryThreshold: 0.2,
+      minDeviceMemoryGb: 1
+    }
   },
   a11y: {
     announce: true,
@@ -338,3 +181,24 @@ createLinkRuntime({
   }
 });
 ```
+
+## 10. Measure It
+
+```bash
+npm run benchmark
+npm run benchmark:browser
+npm run benchmark:bundle-size
+npm run benchmark:memory
+npm run publish:check
+```
+
+Use `npm run publish:check`, not `publish:check` by itself.
+
+## Common Mistakes
+
+- Using `viewport` on every sidebar item.
+- Prefetching private or mutation-heavy routes.
+- Letting multiple libraries prefetch the same route independently.
+- Caching data without tags.
+- Forgetting `data-route-focus` on pages.
+- Importing `rockzy-link` root in non-React framework code when `rockzy-link/runtime` is enough.

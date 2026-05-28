@@ -1,7 +1,6 @@
 export const OFFLINE_NAVIGATION_SERVICE_WORKER = `
 const CACHE_NAME = "production-link-offline-v1";
 const OFFLINE_URLS = ["/"];
-const navigationQueue = [];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -14,15 +13,9 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(self.clients.claim());
 });
 
-self.addEventListener("message", (event) => {
-  if (event.data && event.data.type === "PRODUCTION_LINK_QUEUE_NAVIGATION") {
-    navigationQueue.push(event.data.payload);
-  }
-});
-
 self.addEventListener("fetch", (event) => {
   const request = event.request;
-  if (request.mode !== "navigate") return;
+  if (request.mode !== "navigate" || request.method !== "GET") return;
 
   event.respondWith(
     fetch(request)

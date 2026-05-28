@@ -1,0 +1,41 @@
+# Tracks package bundle/file budgets for every push and pull request.
+# size-limit exits non-zero when any configured limit is exceeded.
+name: Size
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  size:
+    name: Bundle size budget
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check size limits
+        run: |
+          set -o pipefail
+          npm run size:ci 2>&1 | tee size-limit-report.txt
+
+      - name: Upload size report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: size-limit-report
+          path: size-limit-report.txt
+          if-no-files-found: warn

@@ -20,6 +20,7 @@ export class NavigationSnapshotCache {
   private readonly snapshots = new Map<string, NavigationSnapshot>();
   private readonly maxEntries: number;
   private readonly rootSelector: string;
+  private readonly restoreDom: boolean;
 
   constructor(
     private readonly scroll: ScrollRestorationManager,
@@ -27,6 +28,7 @@ export class NavigationSnapshotCache {
   ) {
     this.maxEntries = options.maxEntries ?? 30;
     this.rootSelector = options.rootSelector ?? "[data-route-root], #root, main";
+    this.restoreDom = options.restoreDom ?? false;
   }
 
   capture(key = getCurrentHref()): NavigationSnapshot | undefined {
@@ -35,7 +37,7 @@ export class NavigationSnapshotCache {
     const root = document.querySelector<HTMLElement>(this.rootSelector);
     const snapshot: NavigationSnapshot = {
       key,
-      html: root?.innerHTML,
+      html: this.restoreDom ? root?.innerHTML : undefined,
       state: window.history.state,
       scroll: this.scroll.save(key),
       createdAt: Date.now()

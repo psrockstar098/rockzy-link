@@ -6,6 +6,14 @@ export interface NetworkBudgetOptions {
   memoryBudgetBytes?: number | undefined;
 }
 
+export interface DevicePrefetchPolicy {
+  adaptive?: boolean | undefined;
+  batteryLevel?: number | undefined;
+  batteryCharging?: boolean | undefined;
+  lowBatteryThreshold?: number | undefined;
+  minDeviceMemoryGb?: number | undefined;
+}
+
 export class NetworkBudget {
   private availableBytes: number;
   private windowStartedAt = Date.now();
@@ -48,7 +56,10 @@ export class NetworkBudget {
   }
 }
 
-export function canPrefetchOnCurrentDevice(priority: PrefetchPriority): boolean {
+export function canPrefetchOnCurrentDevice(
+  priority: PrefetchPriority,
+  policy: DevicePrefetchPolicy = {}
+): boolean {
   if (!isBrowser()) return false;
   const connection = getConnection();
 
@@ -56,8 +67,19 @@ export function canPrefetchOnCurrentDevice(priority: PrefetchPriority): boolean 
   if (connection?.effectiveType === "slow-2g") return false;
   if (connection?.effectiveType === "2g") return priority === "high";
 
+  if (
+    policy.adaptive !== false &&
+    policy.batteryLevel !== undefined &&
+    policy.batteryCharging === false &&
+    policy.batteryLevel <= (policy.lowBatteryThreshold ?? 0.2)
+  ) {
+    return priority === "high";
+  }
+
   const memory = getDeviceMemory();
-  if (memory !== undefined && memory <= 1) return priority === "high";
+  if (memory !== undefined && memory <= (policy.minDeviceMemoryGb ?? 1)) {
+    return priority === "high";
+  }
 
   if (document.visibilityState === "hidden" && priority !== "high") return false;
   return true;

@@ -9,11 +9,16 @@ import React, {
 } from "react";
 import { requestIdle } from "./environment.js";
 import { PointerIntentTracker } from "./prefetch/pointer-intent.js";
-import type { PrefetchFetcher } from "./prefetch/scheduler.js";
+import type {
+  PrefetchAssetInput,
+  PrefetchFetcher,
+  SpeculationRulesOptions
+} from "./prefetch/scheduler.js";
 import {
   LinkRuntime,
   getDefaultLinkRuntime
 } from "./runtime/link-runtime.js";
+import type { NavigationGuard } from "./runtime/link-runtime.js";
 import { classifyHref } from "./security/url.js";
 import type {
   Href,
@@ -33,15 +38,17 @@ export type {
 
 export interface LinkProps
   extends Omit<React.AnchorHTMLAttributes<HTMLAnchorElement>, "download" | "href"> {
-  href: Href;
+  href?: Href;
+  to?: Href;
   replace?: boolean;
   scroll?: boolean | string;
   scrollBehavior?: ScrollBehavior;
-  prefetch?: PrefetchBehavior | false;
+  prefetch?: PrefetchBehavior | boolean | null;
   prefetchPriority?: PrefetchPriority;
   router?: LinkRouter;
   state?: unknown;
   onBeforeNavigate?: (href: string) => boolean | void | Promise<boolean | void>;
+  beforeNavigate?: NavigationGuard | readonly NavigationGuard[];
   onNavigate?: (href: string) => void;
   onNavigateError?: (error: unknown, href: string) => void;
   "aria-label"?: string;
@@ -52,10 +59,22 @@ export interface LinkProps
   cacheTtlMs?: number;
   staleWhileRevalidateMs?: number;
   estimateBytes?: number;
+  prefetchTimeoutMs?: number;
+  prefetchMaxRetries?: number;
+  prefetchRetryBaseDelayMs?: number;
+  prefetchRetryMaxDelayMs?: number;
+  prefetchRetryBackoffFactor?: number;
+  prefetchRetryJitterRatio?: number;
+  preloadAssets?: readonly PrefetchAssetInput[];
+  speculationRules?: boolean | SpeculationRulesOptions;
+  viewportScrollDebounceMs?: number;
+  viewportScrollVelocityThreshold?: number;
   hashOffset?: number;
   focus?: boolean | string;
   announce?: boolean | string;
   fallbackHref?: string;
+  reloadDocument?: boolean;
+  preventScrollReset?: boolean;
 }
 
 const LinkRuntimeContext = createContext<LinkRuntime | null>(null);
@@ -83,6 +102,7 @@ export const Link = forwardRef<HTMLAnchorElement, LinkProps>(
   (
     {
       href,
+      to,
       replace = false,
       scroll = true,
       scrollBehavior = "auto",
@@ -91,9 +111,11 @@ export const Link = forwardRef<HTMLAnchorElement, LinkProps>(
       router,
       state,
       onBeforeNavigate,
+      beforeNavigate,
       onNavigate,
       onNavigateError,
       onClick,
+      onPointerDown,
       onMouseEnter,
       onPointerEnter,
       onPointerLeave,
@@ -108,18 +130,31 @@ export const Link = forwardRef<HTMLAnchorElement, LinkProps>(
       cacheTtlMs,
       staleWhileRevalidateMs,
       estimateBytes,
+      prefetchTimeoutMs,
+      prefetchMaxRetries,
+      prefetchRetryBaseDelayMs,
+      prefetchRetryMaxDelayMs,
+      prefetchRetryBackoffFactor,
+      prefetchRetryJitterRatio,
+      preloadAssets,
+      speculationRules,
+      viewportScrollDebounceMs = 120,
+      viewportScrollVelocityThreshold = 1.4,
       hashOffset,
       focus,
       announce,
       fallbackHref,
+      reloadDocument = false,
+      preventScrollReset = false,
       ...rest
     },
     ref
   ) => {
     const runtime = useLinkRuntime();
     const anchorRef = useRef<HTMLAnchorElement | null>(null);
-    const hrefInfo = useMemo(() => classifyHref(href), [href]);
-    const behavior = prefetch === false ? "none" : prefetch;
+    const resolvedHref = href ?? to ?? "#";
+    const hrefInfo = useMemo(() => classifyHref(resolvedHref), [resolvedHref]);
+    const behavior = normalizePrefetchBehavior(prefetch);
     const priority = prefetchPriority ?? priorityForBehavior(behavior);
     const prefetchFetcher = useMemo(
       () => createRouterPrefetcher(router),
@@ -138,19 +173,27 @@ export const Link = forwardRef<HTMLAnchorElement, LinkProps>(
     );
 
     const schedulePrefetch = useCallback(
-      (viewportScore?: number) => {
+      (viewportScore?: number, priorityOverride?: PrefetchPriority) => {
         if (behavior === "none") return;
         if (hrefInfo.isUnsafe || hrefInfo.isExternal || hrefInfo.isHash) return;
 
         runtime.prefetch(hrefInfo.href, {
-          priority,
+          priority: priorityOverride ?? priority,
           fetcher: prefetchFetcher,
           kind: "html",
           tags: cacheTags,
           ttlMs: cacheTtlMs,
           staleWhileRevalidateMs,
           estimateBytes,
-          viewportScore
+          timeoutMs: prefetchTimeoutMs,
+          maxRetries: prefetchMaxRetries,
+          retryBaseDelayMs: prefetchRetryBaseDelayMs,
+          retryMaxDelayMs: prefetchRetryMaxDelayMs,
+          retryBackoffFactor: prefetchRetryBackoffFactor,
+          retryJitterRatio: prefetchRetryJitterRatio,
+          viewportScore,
+          assets: preloadAssets,
+          speculationRules
         });
       },
       [
@@ -162,9 +205,17 @@ export const Link = forwardRef<HTMLAnchorElement, LinkProps>(
         hrefInfo.isExternal,
         hrefInfo.isHash,
         hrefInfo.isUnsafe,
+        preloadAssets,
         prefetchFetcher,
+        prefetchMaxRetries,
+        prefetchRetryBackoffFactor,
+        prefetchRetryBaseDelayMs,
+        prefetchRetryJitterRatio,
+        prefetchRetryMaxDelayMs,
+        prefetchTimeoutMs,
         priority,
         runtime,
+        speculationRules,
         staleWhileRevalidateMs
       ]
     );
@@ -174,12 +225,20 @@ export const Link = forwardRef<HTMLAnchorElement, LinkProps>(
       if (hrefInfo.isUnsafe || hrefInfo.isExternal || hrefInfo.isHash) return;
       const element = anchorRef.current;
       if (!element || typeof IntersectionObserver === "undefined") return;
+      let cancelPendingPrefetch: (() => void) | undefined;
 
       const observer = new IntersectionObserver(
         (entries) => {
           for (const entry of entries) {
             if (!entry.isIntersecting) continue;
-            schedulePrefetch(scoreViewportEntry(entry));
+            const score = scoreViewportEntry(entry);
+            cancelPendingPrefetch = scheduleViewportPrefetchAfterScroll(
+              element,
+              score,
+              schedulePrefetch,
+              viewportScrollDebounceMs,
+              viewportScrollVelocityThreshold
+            );
             observer.unobserve(entry.target);
           }
         },
@@ -187,13 +246,18 @@ export const Link = forwardRef<HTMLAnchorElement, LinkProps>(
       );
 
       observer.observe(element);
-      return () => observer.disconnect();
+      return () => {
+        cancelPendingPrefetch?.();
+        observer.disconnect();
+      };
     }, [
       behavior,
       hrefInfo.isExternal,
       hrefInfo.isHash,
       hrefInfo.isUnsafe,
-      schedulePrefetch
+      schedulePrefetch,
+      viewportScrollDebounceMs,
+      viewportScrollVelocityThreshold
     ]);
 
     useEffect(() => {
@@ -223,6 +287,7 @@ export const Link = forwardRef<HTMLAnchorElement, LinkProps>(
         if (target && target !== "_self") return;
         if (hrefInfo.isExternal || hrefInfo.isHash) return;
         if (download) return;
+        if (reloadDocument) return;
 
         event.preventDefault();
 
@@ -236,13 +301,14 @@ export const Link = forwardRef<HTMLAnchorElement, LinkProps>(
             router,
             replace,
             state,
-            scroll,
+            scroll: preventScrollReset ? false : scroll,
             scrollBehavior,
             hashOffset,
             viewTransition,
             focus,
             announce,
-            fallbackHref
+            fallbackHref,
+            guards: beforeNavigate
           });
           onNavigate?.(hrefInfo.href);
         } catch (error) {
@@ -259,11 +325,14 @@ export const Link = forwardRef<HTMLAnchorElement, LinkProps>(
         hrefInfo.isExternal,
         hrefInfo.isHash,
         hrefInfo.isUnsafe,
+        beforeNavigate,
         onBeforeNavigate,
         onClick,
         onNavigate,
         onNavigateError,
+        preventScrollReset,
         replace,
+        reloadDocument,
         router,
         runtime,
         scroll,
@@ -272,6 +341,19 @@ export const Link = forwardRef<HTMLAnchorElement, LinkProps>(
         target,
         viewTransition
       ]
+    );
+
+    const handlePointerDown = useCallback(
+      (event: React.PointerEvent<HTMLAnchorElement>) => {
+        onPointerDown?.(event);
+        if (event.defaultPrevented || behavior === "none") return;
+        if (event.button !== 0) return;
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        if (target && target !== "_self") return;
+        if (download) return;
+        schedulePrefetch(undefined, "high");
+      },
+      [behavior, download, onPointerDown, schedulePrefetch, target]
     );
 
     const handlePointerEnter = useCallback(
@@ -342,6 +424,7 @@ export const Link = forwardRef<HTMLAnchorElement, LinkProps>(
         rel={computedRel}
         download={downloadAttr}
         onClick={navigate}
+        onPointerDown={handlePointerDown}
         onPointerEnter={handlePointerEnter}
         onPointerLeave={handlePointerLeave}
         onMouseEnter={handleMouseEnter}
@@ -397,11 +480,85 @@ function priorityForBehavior(
   return "low";
 }
 
+function normalizePrefetchBehavior(
+  behavior: PrefetchBehavior | boolean | null | undefined
+): PrefetchBehavior | "none" {
+  if (behavior === false || behavior === "none") return "none";
+  if (behavior === "viewport" || behavior === "idle") return behavior;
+  return "hover";
+}
+
 function scoreViewportEntry(entry: IntersectionObserverEntry): number {
   const viewportHeight = window.innerHeight || 1;
   const distanceFromTop = Math.max(0, entry.boundingClientRect.top);
   const topScore = 1 - Math.min(1, distanceFromTop / viewportHeight);
   return entry.intersectionRatio * 100 + topScore;
+}
+
+function scheduleViewportPrefetchAfterScroll(
+  element: Element,
+  viewportScore: number,
+  callback: (viewportScore?: number) => void,
+  debounceMs: number,
+  velocityThreshold: number
+): () => void {
+  let cancelled = false;
+  let timeout: number | undefined;
+
+  const run = () => {
+    if (cancelled) return;
+    if (isScrollingQuickly(velocityThreshold)) {
+      timeout = window.setTimeout(run, debounceMs);
+      return;
+    }
+    if (isNearViewport(element)) callback(viewportScore);
+  };
+
+  timeout = window.setTimeout(run, isScrollingQuickly(velocityThreshold) ? debounceMs : 0);
+
+  return () => {
+    cancelled = true;
+    if (timeout !== undefined) window.clearTimeout(timeout);
+  };
+}
+
+let scrollTrackerInstalled = false;
+let lastScrollY = 0;
+let lastScrollAt = 0;
+let lastScrollEventAt = 0;
+let scrollVelocity = 0;
+
+function isScrollingQuickly(velocityThreshold: number): boolean {
+  installScrollTracker();
+  if (performance.now() - lastScrollEventAt > 140) return false;
+  return scrollVelocity > velocityThreshold;
+}
+
+function installScrollTracker(): void {
+  if (scrollTrackerInstalled || typeof window === "undefined") return;
+  scrollTrackerInstalled = true;
+  lastScrollY = window.scrollY;
+  lastScrollAt = performance.now();
+
+  window.addEventListener(
+    "scroll",
+    () => {
+      const now = performance.now();
+      const elapsed = Math.max(1, now - lastScrollAt);
+      const nextY = window.scrollY;
+      scrollVelocity = Math.abs(nextY - lastScrollY) / elapsed;
+      lastScrollY = nextY;
+      lastScrollAt = now;
+      lastScrollEventAt = now;
+    },
+    { passive: true }
+  );
+}
+
+function isNearViewport(element: Element, margin = 200): boolean {
+  const rect = element.getBoundingClientRect();
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+  return rect.bottom >= -margin && rect.top <= viewportHeight + margin;
 }
 
 function mergeRel(

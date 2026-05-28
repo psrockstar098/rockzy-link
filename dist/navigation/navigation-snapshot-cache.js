@@ -5,10 +5,12 @@ export class NavigationSnapshotCache {
     snapshots = new Map();
     maxEntries;
     rootSelector;
+    restoreDom;
     constructor(scroll, options = {}) {
         this.scroll = scroll;
         this.maxEntries = options.maxEntries ?? 30;
         this.rootSelector = options.rootSelector ?? "[data-route-root], #root, main";
+        this.restoreDom = options.restoreDom ?? false;
     }
     capture(key = getCurrentHref()) {
         if (!isBrowser())
@@ -16,7 +18,7 @@ export class NavigationSnapshotCache {
         const root = document.querySelector(this.rootSelector);
         const snapshot = {
             key,
-            html: root?.innerHTML,
+            html: this.restoreDom ? root?.innerHTML : undefined,
             state: window.history.state,
             scroll: this.scroll.save(key),
             createdAt: Date.now()

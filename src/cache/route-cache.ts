@@ -59,6 +59,7 @@ export class RouteCache {
   private readonly defaultStaleWhileRevalidateMs: number;
   private readonly now: () => number;
   private bytes = 0;
+  private lastPruneTime = 0;
 
   constructor(options: RouteCacheOptions = {}) {
     this.maxEntries = options.maxEntries ?? DEFAULT_MAX_ENTRIES;
@@ -102,6 +103,19 @@ export class RouteCache {
     }
 
     return { value: entry.value, entry, stale };
+  }
+
+  has(key: string, kind: CacheKind): boolean {
+    const cacheKey = createCacheKey(kind, key);
+    const entry = this.entries.get(cacheKey);
+    if (!entry) return false;
+
+    if (entry.expiresAt <= this.now()) {
+      this.delete(key, kind);
+      return false;
+    }
+
+    return true;
   }
 
   set<T = unknown>(
@@ -217,7 +231,15 @@ export class RouteCache {
   }
 
   private evictIfNeeded(): void {
-    this.pruneExpired();
+    const now = this.now();
+    const overEntries = this.entries.size > this.maxEntries;
+    const overBytes = this.maxBytes > 0 && this.bytes > this.maxBytes;
+
+    if (overEntries || overBytes || now - this.lastPruneTime >= 5000) {
+      this.pruneExpired();
+      this.lastPruneTime = now;
+    }
+
     while (
       this.entries.size > this.maxEntries ||
       (this.maxBytes > 0 && this.bytes > this.maxBytes)
@@ -274,10 +296,10 @@ export function createCacheKey(kind: CacheKind, key: string): string {
 export function estimateBytes(value: unknown): number {
   if (value == null) return 0;
   if (typeof value === "string") return value.length * 2;
-  if (value instanceof Blob) return value.size;
-  if (value instanceof ArrayBuffer) return value.byteLength;
-  if (ArrayBuffer.isView(value)) return value.byteLength;
-  if (value instanceof Response) {
+  if (typeof Blob !== "undefined" && value instanceof Blob) return value.size;
+  if (typeof ArrayBuffer !== "undefined" && value instanceof ArrayBuffer) return value.byteLength;
+  if (typeof ArrayBuffer !== "undefined" && ArrayBuffer.isView(value)) return value.byteLength;
+  if (typeof Response !== "undefined" && value instanceof Response) {
     const contentLength = value.headers.get("content-length");
     return contentLength ? Number(contentLength) || 0 : 16_384;
   }

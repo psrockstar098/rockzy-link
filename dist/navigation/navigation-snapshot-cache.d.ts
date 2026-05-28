@@ -17,6 +17,7 @@ export declare class NavigationSnapshotCache {
     private readonly snapshots;
     private readonly maxEntries;
     private readonly rootSelector;
+    private readonly restoreDom;
     constructor(scroll: ScrollRestorationManager, options?: NavigationSnapshotOptions);
     capture(key?: string): NavigationSnapshot | undefined;
     restore(key?: string, options?: Pick<NavigationSnapshotOptions, "restoreDom">): NavigationSnapshot | undefined;

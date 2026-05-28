@@ -34,7 +34,7 @@ export class NetworkBudget {
         this.availableBytes = Math.min(this.bytesPerMinute, this.availableBytes + windows * this.bytesPerMinute);
     }
 }
-export function canPrefetchOnCurrentDevice(priority) {
+export function canPrefetchOnCurrentDevice(priority, policy = {}) {
     if (!isBrowser())
         return false;
     const connection = getConnection();
@@ -44,9 +44,16 @@ export function canPrefetchOnCurrentDevice(priority) {
         return false;
     if (connection?.effectiveType === "2g")
         return priority === "high";
-    const memory = getDeviceMemory();
-    if (memory !== undefined && memory <= 1)
+    if (policy.adaptive !== false &&
+        policy.batteryLevel !== undefined &&
+        policy.batteryCharging === false &&
+        policy.batteryLevel <= (policy.lowBatteryThreshold ?? 0.2)) {
         return priority === "high";
+    }
+    const memory = getDeviceMemory();
+    if (memory !== undefined && memory <= (policy.minDeviceMemoryGb ?? 1)) {
+        return priority === "high";
+    }
     if (document.visibilityState === "hidden" && priority !== "high")
         return false;
     return true;
